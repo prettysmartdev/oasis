@@ -47,3 +47,5 @@ webapp/coverage/
 # Editor/IDE
 # .idea/
 # .vscode/
+
+.amux/workflows
