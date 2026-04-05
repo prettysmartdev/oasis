@@ -1,0 +1,17 @@
+services:
+  oasis:
+    build: .
+    ports:
+      # Management API is always loopback-only — never 0.0.0.0
+      - "127.0.0.1:04515:04515"
+    volumes:
+      - oasis-db:/data/db
+      - oasis-ts-state:/data/ts-state
+    environment:
+      - OASIS_MGMT_PORT=04515
+      # TS_AUTHKEY is intentionally omitted here — pass via .env.local for local dev
+      # In CI this job is a no-op stub (work item 0001); real integration tests come later.
+
+volumes:
+  oasis-db:
+  oasis-ts-state:

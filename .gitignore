@@ -24,6 +24,23 @@ profile.cov
 go.work
 go.work.sum
 
+# Secrets — NEVER commit
+.env.local
+
+# Build outputs
+bin/
+dist/
+tmp/
+
+# SQLite
+*.db
+*.db.bak
+
+# Next.js / Node
+webapp/.next/
+webapp/node_modules/
+webapp/coverage/
+
 # env file
 .env
 

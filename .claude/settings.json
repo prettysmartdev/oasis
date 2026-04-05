@@ -1,0 +1,42 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(go build ./...)",
+      "Bash(go build ./cmd/*)",
+      "Bash(go test ./...)",
+      "Bash(go test -race ./...)",
+      "Bash(go vet ./...)",
+      "Bash(go mod tidy)",
+      "Bash(go mod download)",
+      "Bash(go install *)",
+      "Bash(golangci-lint run *)",
+      "Bash(npm --prefix webapp *)",
+      "Bash(npm run *)",
+      "Bash(npx *)",
+      "Bash(make *)",
+      "Bash(docker build *)",
+      "Bash(docker buildx build *)",
+      "Bash(docker compose *)",
+      "Bash(docker-compose *)",
+      "Bash(git status)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git branch *)",
+      "Bash(git checkout *)",
+      "Bash(git show *)",
+      "Bash(git stash *)",
+      "Bash(ls *)",
+      "Bash(mkdir -p *)",
+      "Bash(find * -name *)",
+      "Bash(file ./bin/*)"
+    ],
+    "deny": [
+      "Bash(git push --force*)",
+      "Bash(git reset --hard*)",
+      "Bash(rm -rf *)",
+      "Bash(docker run *)"
+    ]
+  }
+}
