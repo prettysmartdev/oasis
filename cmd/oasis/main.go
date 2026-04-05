@@ -2,7 +2,7 @@
 package main
 
 import (
-	"github.com/[owner]/oasis/internal/cli"
+	"github.com/prettysmartdev/oasis/internal/cli"
 )
 
 // version is embedded at build time via -ldflags "-X main.version=$(git describe --tags --always)".
