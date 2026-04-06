@@ -8,7 +8,7 @@ Storage location: $HOME/.oasis/
 
 ### Command structure
 Top level command groups:
-- oasis init                              — interactive first-time setup: prompts for Tailscale auth key and hostname, pulls the image, starts the container
+- oasis init [--advanced]                 — interactive first-time setup: prompts for Tailscale auth key and hostname, pulls the image, starts the container; --advanced unhides the management port prompt
 - oasis start                             — start the oasis container if it is stopped
 - oasis stop                              — stop the oasis container
 - oasis restart                           — restart the oasis container
@@ -24,7 +24,7 @@ Top level command groups:
 - oasis app update <slug> [--name] [--url] [--description] [--icon] [--tags] — update app fields
 - oasis settings get [key]               — print current settings (or a single key's value)
 - oasis settings set <key> <value>       — update a settings value
-- oasis db backup [--output <path>]      — download a copy of the SQLite database to the host
+- oasis db backup [--output <path>] [--db-path <container-path>] — download a copy of the SQLite database to the host; --db-path overrides the default /data/db/oasis.db for non-standard installs
 
 ### Flag structure
 Flag guidance:

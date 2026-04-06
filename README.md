@@ -11,7 +11,7 @@
 
 **OaSis** is a self-hosted dashboard that discovers, organizes, and exposes your locally-running apps and AI agents exclusively over your [Tailscale](https://tailscale.com) network. One Docker container, no accounts, no open ports — your personal homescreen, accessible from any device on your tailnet.
 
-> **Status:** This repository is under active development. The codebase scaffold is in place; features are being implemented incrementally.
+> **Status:** This repository is under active development. The CLI and controller scaffold are in place; the webapp dashboard is being implemented incrementally.
 
 ---
 
@@ -74,7 +74,7 @@ No root/sudo required. On Linux, your user must be in the `docker` group.
 
 ## User quickstart
 
-> **Note:** The CLI and Docker image are not yet published. This section reflects the intended end-user experience once releases are available.
+> **Note:** The Docker image is not yet published. This section reflects the intended end-user experience once releases are available.
 
 ```sh
 # 1. Install the oasis CLI
@@ -171,8 +171,15 @@ internal/
     tsnet/            # Tailscale tsnet integration (stub)
   cli/
     root.go           # Cobra root command + global flags
+    init.go           # `oasis init` interactive setup wizard
+    container.go      # start, stop, restart, status, update, logs commands
     app.go            # `oasis app` subcommand group
     settings.go       # `oasis settings` subcommand group
+    db.go             # `oasis db` subcommand group
+    config/           # CLI config (~/.oasis/config.json) load/save
+    client/           # HTTP client for the management API
+    docker/           # Docker CLI wrapper (pull, run, start, stop, logs, …)
+    table/            # Output formatting: tables, key/value lists, spinner
 webapp/               # Next.js App Router (static export)
   app/                # Pages and layouts
   components/         # shadcn/ui components (added as features land)

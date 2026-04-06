@@ -8,7 +8,11 @@
       "Bash(go build:*)",
       "Bash(go test:*)",
       "Bash(echo \"EXIT: $?\")",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "Bash(grep:*)",
+      "Bash(wait)",
+      "Bash(echo \"EXIT_CODE: $?\")",
+      "Bash(CGO_ENABLED=0 go vet:*)"
     ]
   }
 }

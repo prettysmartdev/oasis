@@ -43,24 +43,24 @@ func TestRootCmdVersion(t *testing.T) {
 	}
 }
 
-// TestSubcommandNotImplemented confirms a representative subcommand prints
-// "not yet implemented" and exits 0 (returns nil).
-func TestSubcommandNotImplemented(t *testing.T) {
+// TestAppAddHelp confirms that `oasis app add --help` works without error and
+// contains expected help text, validating that subcommands are properly wired.
+func TestAppAddHelp(t *testing.T) {
 	orig := rootCmd.Version
 	resetRootCmd(t, orig)
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
 	rootCmd.SetErr(&buf)
-	rootCmd.SetArgs([]string{"app", "list"})
+	rootCmd.SetArgs([]string{"app", "add", "--help"})
 
 	if err := rootCmd.Execute(); err != nil {
-		t.Fatalf("'app list' returned unexpected error: %v", err)
+		t.Fatalf("'app add --help' returned unexpected error: %v", err)
 	}
 
 	output := buf.String()
-	if !strings.Contains(output, "not yet implemented") {
-		t.Errorf("expected 'not yet implemented', got %q", output)
+	if !strings.Contains(output, "--name") {
+		t.Errorf("expected '--name' flag in help output, got %q", output)
 	}
 }
 

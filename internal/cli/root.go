@@ -2,17 +2,21 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
+	"github.com/prettysmartdev/oasis/internal/cli/client"
+	"github.com/prettysmartdev/oasis/internal/cli/config"
 	"github.com/spf13/cobra"
 )
 
-// Global flag values — bound by cobra and read in command implementations (future work items).
+// Global flag values — bound by cobra and read in command implementations.
 var (
 	cfgFile string
 	jsonOut bool
 	quiet   bool
+
+	// cliVersion holds the embedded version string set by Execute.
+	cliVersion string
 )
 
 // rootCmd is the base command for the oasis CLI.
@@ -26,10 +30,21 @@ exposed exclusively over your Tailscale network.`,
 
 // Execute runs the root command with the embedded version string.
 func Execute(version string) {
+	cliVersion = version
 	rootCmd.Version = version
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+}
+
+// newClient creates an API client using the current config and CLI version.
+func newClient() *client.Client {
+	path := cfgFile
+	if path == "" {
+		path = config.DefaultPath()
+	}
+	cfg, _ := config.Load(path) // ignore error; use defaults if not found
+	return client.New(cfg.MgmtEndpoint, rootCmd.Version)
 }
 
 func init() {
@@ -39,24 +54,12 @@ func init() {
 
 	rootCmd.AddCommand(appCmd)
 	rootCmd.AddCommand(settingsCmd)
-	rootCmd.AddCommand(newStubCmd("init", "Interactive first-time setup"))
-	rootCmd.AddCommand(newStubCmd("start", "Start the oasis container"))
-	rootCmd.AddCommand(newStubCmd("stop", "Stop the oasis container"))
-	rootCmd.AddCommand(newStubCmd("restart", "Restart the oasis container"))
-	rootCmd.AddCommand(newStubCmd("status", "Show controller status"))
-	rootCmd.AddCommand(newStubCmd("update", "Pull the latest image and restart"))
-	rootCmd.AddCommand(newStubCmd("logs", "Stream or print controller logs"))
-	rootCmd.AddCommand(newStubCmd("db", "Database management"))
-}
-
-// newStubCmd creates a placeholder command that prints "not yet implemented".
-func newStubCmd(use, short string) *cobra.Command {
-	return &cobra.Command{
-		Use:   use,
-		Short: short,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "not yet implemented")
-			return nil
-		},
-	}
+	rootCmd.AddCommand(newInitCmd())
+	rootCmd.AddCommand(newStartCmd())
+	rootCmd.AddCommand(newStopCmd())
+	rootCmd.AddCommand(newRestartCmd())
+	rootCmd.AddCommand(newStatusCmd())
+	rootCmd.AddCommand(newUpdateCmd())
+	rootCmd.AddCommand(newLogsCmd())
+	rootCmd.AddCommand(newDbCmd())
 }
