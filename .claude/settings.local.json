@@ -31,7 +31,25 @@
       "Bash(/usr/bin/node --version)",
       "Bash(mv /usr/local/bin/node /usr/local/bin/node.x86_backup)",
       "Bash(ln -s /usr/bin/node /usr/local/bin/node)",
-      "Bash(npm ci:*)"
+      "Bash(npm ci:*)",
+      "Bash(npm audit:*)",
+      "Bash(npm view:*)",
+      "Bash(python3 -c \"import json,sys; vs=[v for v in json.load\\(sys.stdin\\) if v.startswith\\('14.'\\)]; print\\(vs[-5:]\\)\")",
+      "Bash(python3 -c \"import json,sys; vs=json.load\\(sys.stdin\\); print\\(vs[-5:]\\)\")",
+      "Bash(python3 -c \"import json,sys; vs=[v for v in json.load\\(sys.stdin\\) if v.startswith\\('14.'\\) and 'canary' not in v and 'alpha' not in v and 'beta' not in v and 'rc' not in v]; print\\(vs[-10:]\\)\")",
+      "Bash(cat /workspace/webapp/next.config*)",
+      "Bash(node -e \"const {GeistSans} = require\\('/workspace/webapp/node_modules/geist/font/sans'\\); console.log\\(GeistSans.variable, GeistSans.className\\)\")",
+      "Bash(python3 -c \"import json,sys; vs=json.load\\(sys.stdin\\); stable=[v for v in vs if 'canary' not in v and 'alpha' not in v and 'beta' not in v and 'rc' not in v and v.startswith\\('15.'\\)]; print\\(stable[-10:]\\)\")",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(d['version']\\)\")",
+      "Bash(npm ls:*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('peerDependencies', {}\\), indent=2\\)\\)\")",
+      "Bash(cat /workspace/webapp/.eslintrc*)",
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(json.dumps\\({k:v for k,v in d.items\\(\\) if k in ['exports','main','version']}, indent=2\\)\\)\")",
+      "Bash(python3 -c \"import json,sys; vs=json.load\\(sys.stdin\\); stable=[v for v in vs if 'alpha' not in v and 'beta' not in v and 'rc' not in v and v.startswith\\('9.'\\)]; print\\(stable[-5:]\\)\")",
+      "Bash(echo \"exit: $?\")",
+      "Bash(go env:*)",
+      "Bash(go doc:*)",
+      "Bash(go vet:*)"
     ]
   }
 }

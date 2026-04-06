@@ -6,7 +6,8 @@ WORKDIR /build
 
 # Install dependencies first (layer-cached unless package.json changes)
 COPY webapp/package*.json ./webapp/
-RUN npm --prefix webapp ci
+RUN --mount=type=cache,target=/root/.npm \
+    npm --prefix webapp ci
 
 # Copy source and build static export
 COPY webapp/ ./webapp/
@@ -15,17 +16,26 @@ RUN npm --prefix webapp run build
 
 
 # ── Stage 2: Build Go binaries ──────────────────────────────────────────────────
-FROM golang:1.22-alpine AS go-builder
+FROM golang:1.26-alpine AS go-builder
 WORKDIR /build
 
-# Download dependencies first (layer-cached unless go.mod/go.sum change).
+# Download dependencies (cached in /go/pkg/mod across builds).
 COPY go.mod go.sum ./
-RUN go mod download
+RUN --mount=type=cache,target=/go/pkg/mod \
+    go mod download
 
-# Build with CGO_ENABLED=0 for fully static binaries
-COPY . .
+# Copy only Go source — changes to webapp/, docs/, aspec/, etc. won't bust this layer.
+COPY cmd/ ./cmd/
+COPY internal/ ./internal/
+
+# Build with CGO_ENABLED=0 for fully static binaries.
+# --mount=type=cache,target=/root/.cache/go-build persists the Go compiler's
+# incremental build cache across Docker builds, turning a 200 s cold compile
+# into a few seconds when only application code has changed.
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build \
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build \
         -mod=mod \
         -ldflags "-X main.version=${VERSION}" \
         -o bin/controller ./cmd/controller \
@@ -43,8 +53,9 @@ ARG S6_OVERLAY_VERSION=3.1.6.2
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        nginx \
+        ca-certificates \
         curl \
+        nginx \
         xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
@@ -71,11 +82,24 @@ COPY --from=go-builder /build/bin/oasis      /usr/local/bin/oasis
 # Copy built Next.js static assets
 COPY --from=webapp-builder /build/dist/webapp /srv/webapp
 
+# Copy s6-overlay service definitions
+COPY etc/s6-overlay/ /etc/s6-overlay/
+
+# Copy default NGINX stub config (controller overwrites this after tsnet setup)
+COPY etc/nginx/nginx.conf /etc/nginx/nginx.conf
+
+# Make s6 run scripts executable
+RUN chmod +x /etc/s6-overlay/s6-rc.d/controller/run \
+             /etc/s6-overlay/s6-rc.d/nginx/run
+
 # Create non-root user (uid 1000)
 RUN groupadd -g 1000 oasis \
     && useradd -u 1000 -g oasis -s /sbin/nologin -d /data oasis \
     && mkdir -p /data/db /data/ts-state \
     && chown -R oasis:oasis /data /srv/webapp
+
+# Allow the oasis user to write NGINX config and use NGINX temp/log dirs
+RUN chown -R oasis:oasis /etc/nginx /var/lib/nginx /var/log/nginx
 
 # The management API is published loopback-only: 127.0.0.1:04515:04515
 EXPOSE 04515

@@ -72,7 +72,7 @@ func RunContainer(opts RunOptions) error {
 		"--restart", "unless-stopped",
 		"-v", "oasis-db:/data/db",
 		"-v", "oasis-ts-state:/data/ts-state",
-		"-p", fmt.Sprintf("127.0.0.1:%s:04515", port),
+		"-p", fmt.Sprintf("127.0.0.1:%s:%s", port, mgmtPort),
 		"-e", fmt.Sprintf("TS_AUTHKEY=%s", opts.TsAuthKey),
 		"-e", fmt.Sprintf("OASIS_HOSTNAME=%s", opts.TsHostname),
 		"-e", fmt.Sprintf("OASIS_MGMT_PORT=%s", mgmtPort),

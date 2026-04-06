@@ -18,21 +18,23 @@ import (
 // newInitCmd returns the `oasis init` interactive setup command.
 func newInitCmd() *cobra.Command {
 	var advanced bool
+	var dev bool
 
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Interactive first-time setup",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runInit(cmd, advanced)
+			return runInit(cmd, advanced, dev)
 		},
 	}
 
 	cmd.Flags().BoolVar(&advanced, "advanced", false, "Show advanced configuration options")
+	cmd.Flags().BoolVar(&dev, "dev", false, "Use locally built dev image (oasis:latest) instead of pulling from registry")
 
 	return cmd
 }
 
-func runInit(cmd *cobra.Command, advanced bool) error {
+func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 	// Step 1: Check docker is available.
 	if _, err := docker.ContainerExists("__probe__"); err != nil {
 		if strings.Contains(err.Error(), "not installed") || strings.Contains(err.Error(), "not in PATH") {
@@ -75,7 +77,13 @@ func runInit(cmd *cobra.Command, advanced bool) error {
 		mgmtPort = promptStringDefault("Management port", "04515")
 	}
 
-	image := "ghcr.io/prettysmartdev/oasis:latest"
+	const devImage = "oasis:latest"
+	const remoteImage = "ghcr.io/prettysmartdev/oasis:latest"
+
+	image := remoteImage
+	if dev {
+		image = devImage
+	}
 	containerName := "oasis"
 
 	// Handle stale container.
@@ -88,11 +96,13 @@ func runInit(cmd *cobra.Command, advanced bool) error {
 		}
 	}
 
-	// Step 4: Pull image.
-	if err := table.Spinner("Pulling oasis image...", func() error {
-		return docker.PullImage(image, os.Stderr)
-	}); err != nil {
-		return fmt.Errorf("pulling image: %w", err)
+	// Step 4: Pull image (skipped in dev mode — uses locally built image).
+	if !dev {
+		if err := table.Spinner("Pulling oasis image...", func() error {
+			return docker.PullImage(image, os.Stderr)
+		}); err != nil {
+			return fmt.Errorf("pulling image: %w", err)
+		}
 	}
 
 	// Step 5: Run container.
@@ -108,31 +118,50 @@ func runInit(cmd *cobra.Command, advanced bool) error {
 		return fmt.Errorf("starting container: %w", err)
 	}
 
-	// Step 6: Poll for ready.
 	endpoint := fmt.Sprintf("http://127.0.0.1:%s", mgmtPort)
-	c := client.New(endpoint, cliVersion).WithTimeout(5 * time.Second)
 
 	type statusResp struct {
 		TailscaleConnected bool   `json:"tailscaleConnected"`
 		TailscaleHostname  string `json:"tailscaleHostname"`
-		TailnetName        string `json:"tailnetName"`
 		Version            string `json:"version"`
 	}
 
+	// Step 6: Wait for the management API to be reachable (controller may take a moment to start).
+	apiReady := false
+	_ = table.Spinner("Waiting for controller to start...", func() error {
+		probe := client.New(endpoint, cliVersion).WithTimeout(3 * time.Second)
+		deadline := time.Now().Add(30 * time.Second)
+		for time.Now().Before(deadline) {
+			var s statusResp
+			if err := probe.Get("/api/v1/status", &s); err == nil {
+				apiReady = true
+				return nil
+			}
+			time.Sleep(1 * time.Second)
+		}
+		return nil
+	})
+
+	if !apiReady {
+		return fmt.Errorf("controller did not start within 30 seconds — check logs with `oasis logs`")
+	}
+
+	// Step 7: Drive Tailscale setup via the management API.
+	// POST /api/v1/setup passes the auth key to the controller and blocks until the
+	// tsnet node has joined the tailnet. Use a long timeout — auth can take ~30 s.
 	var sr statusResp
 	ready := false
 
-	_ = table.Spinner("Waiting for Tailscale connection...", func() error {
-		deadline := time.Now().Add(90 * time.Second)
-		for time.Now().Before(deadline) {
-			var s statusResp
-			if err := c.Get("/api/v1/status", &s); err == nil && s.TailscaleConnected {
-				sr = s
-				ready = true
-				return nil
-			}
-			time.Sleep(2 * time.Second)
+	_ = table.Spinner("Connecting to Tailscale...", func() error {
+		setupClient := client.New(endpoint, cliVersion).WithTimeout(90 * time.Second)
+		body := map[string]string{
+			"tailscaleAuthKey": tsAuthKey,
+			"hostname":         tsHostname,
 		}
+		if err := setupClient.Post("/api/v1/setup", body, &sr); err != nil {
+			return err
+		}
+		ready = sr.TailscaleConnected
 		return nil
 	})
 
@@ -140,7 +169,7 @@ func runInit(cmd *cobra.Command, advanced bool) error {
 		fmt.Fprintln(cmd.OutOrStdout(), "Tailscale connection is taking longer than expected. Your oasis container is running but may not be reachable yet. Check status with `oasis status`.")
 	}
 
-	// Step 7: Write config.
+	// Step 8: Write config.
 	cfg := &config.Config{
 		MgmtEndpoint:     endpoint,
 		ContainerName:    containerName,
@@ -150,20 +179,13 @@ func runInit(cmd *cobra.Command, advanced bool) error {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
-	// Step 8: Print success.
+	// Step 9: Print success.
 	if ready {
 		hostname := sr.TailscaleHostname
 		if hostname == "" {
 			hostname = tsHostname
 		}
-		tailnet := sr.TailnetName
-		var tsURL string
-		if tailnet != "" {
-			tsURL = fmt.Sprintf("https://%s.%s.ts.net", hostname, tailnet)
-		} else {
-			tsURL = fmt.Sprintf("https://%s.ts.net", hostname)
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Your oasis is ready at %s\n", tsURL)
+		fmt.Fprintf(cmd.OutOrStdout(), "Your oasis is ready at https://%s.ts.net\n", hostname)
 	}
 
 	return nil

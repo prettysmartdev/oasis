@@ -18,7 +18,7 @@ func nopPID() (int, error) {
 
 // TestApplyNoApps verifies that an empty app list produces a config with no "/apps/" blocks.
 func TestApplyNoApps(t *testing.T) {
-	config, err := buildConfig([]db.App{}, "100.64.0.1")
+	config, err := buildConfig([]db.App{})
 	if err != nil {
 		t.Fatalf("buildConfig error: %v", err)
 	}
@@ -37,7 +37,7 @@ func TestApplyDisabledApp(t *testing.T) {
 		},
 	}
 
-	config, err := buildConfig(apps, "100.64.0.1")
+	config, err := buildConfig(apps)
 	if err != nil {
 		t.Fatalf("buildConfig error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestApplyEnabledApp(t *testing.T) {
 		},
 	}
 
-	config, err := buildConfig(apps, "100.64.0.1")
+	config, err := buildConfig(apps)
 	if err != nil {
 		t.Fatalf("buildConfig error: %v", err)
 	}
@@ -86,7 +86,7 @@ func TestAtomicWrite(t *testing.T) {
 		},
 	}
 
-	if err := c.Apply(context.Background(), apps, "100.64.0.1"); err != nil {
+	if err := c.Apply(context.Background(), apps); err != nil {
 		t.Fatalf("Apply error: %v", err)
 	}
 

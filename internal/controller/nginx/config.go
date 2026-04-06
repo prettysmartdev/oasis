@@ -1,6 +1,11 @@
 // Package nginx generates and applies NGINX configuration for the oasis gateway.
 // Configuration is produced programmatically using go-crossplane AST types and
 // applied via SIGHUP for graceful reload without dropping connections.
+//
+// NGINX listens on LocalAddr (127.0.0.1:8080) inside the container — not on the
+// Tailscale IP, which only exists in tsnet's userspace Go network stack and is
+// therefore inaccessible to other OS processes. Tailnet traffic arrives at the
+// tsnet Go HTTP server, which reverse-proxies non-API requests to LocalAddr.
 package nginx
 
 import (
@@ -18,6 +23,10 @@ import (
 
 	"github.com/prettysmartdev/oasis/internal/controller/db"
 )
+
+// LocalAddr is the local address NGINX listens on inside the container.
+// The tsnet Go HTTP server proxies incoming Tailscale traffic to this address.
+const LocalAddr = "http://127.0.0.1:8080"
 
 // Configurator generates NGINX configuration from the app registry state
 // and signals NGINX to reload when the configuration changes.
@@ -42,9 +51,9 @@ func NewWithConfig(configPath string, nginxPID func() (int, error)) *Configurato
 	}
 }
 
-// FindNginxPID reads /var/run/nginx.pid and returns the NGINX master process PID.
+// FindNginxPID reads /tmp/nginx.pid and returns the NGINX master process PID.
 func FindNginxPID() (int, error) {
-	data, err := os.ReadFile("/var/run/nginx.pid")
+	data, err := os.ReadFile("/tmp/nginx.pid")
 	if err != nil {
 		return 0, fmt.Errorf("read nginx.pid: %w", err)
 	}
@@ -55,15 +64,15 @@ func FindNginxPID() (int, error) {
 	return pid, nil
 }
 
-// Apply builds the NGINX config from apps and tailscaleIP, writes it atomically,
-// and sends SIGHUP to trigger a graceful reload.
+// Apply builds the NGINX config from apps, writes it atomically, and sends SIGHUP
+// to trigger a graceful reload.
 // If configPath is empty the write and SIGHUP steps are skipped (test mode).
 // SIGHUP errors are logged but not returned — NGINX may not be running in dev.
 // Concurrent calls are serialised by an internal mutex.
-func (c *Configurator) Apply(_ context.Context, apps []db.App, tailscaleIP string) error {
+func (c *Configurator) Apply(_ context.Context, apps []db.App) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	config, err := buildConfig(apps, tailscaleIP)
+	config, err := buildConfig(apps)
 	if err != nil {
 		return fmt.Errorf("build nginx config: %w", err)
 	}
@@ -99,7 +108,7 @@ func (c *Configurator) Apply(_ context.Context, apps []db.App, tailscaleIP strin
 }
 
 // buildConfig constructs the full NGINX config string using the go-crossplane AST.
-func buildConfig(apps []db.App, tailscaleIP string) (string, error) {
+func buildConfig(apps []db.App) (string, error) {
 	// Build location blocks for enabled apps.
 	var locations []crossplane.Directive
 	for _, app := range apps {
@@ -130,13 +139,20 @@ func buildConfig(apps []db.App, tailscaleIP string) (string, error) {
 		},
 	})
 
-	listenAddr := tailscaleIP + ":80"
+	// NGINX listens on a fixed local address. Tailnet traffic arrives via the
+	// tsnet Go HTTP server, which reverse-proxies non-API requests here.
+	// Using a local port avoids the EADDRNOTAVAIL error that occurs when NGINX
+	// tries to bind to the Tailscale IP (which only exists in tsnet's userspace
+	// network stack and is not visible to other OS processes).
+	listenAddr := "127.0.0.1:8080"
 	serverBlock := []crossplane.Directive{
 		{Directive: "listen", Args: []string{listenAddr}},
 	}
 	serverBlock = append(serverBlock, locations...)
 
 	parsed := []crossplane.Directive{
+		{Directive: "pid", Args: []string{"/tmp/nginx.pid"}},
+		{Directive: "error_log", Args: []string{"/dev/stderr", "warn"}},
 		{
 			Directive: "events",
 			Args:      []string{},
@@ -146,6 +162,9 @@ func buildConfig(apps []db.App, tailscaleIP string) (string, error) {
 			Directive: "http",
 			Args:      []string{},
 			Block: &[]crossplane.Directive{
+				{Directive: "include", Args: []string{"/etc/nginx/mime.types"}},
+				{Directive: "default_type", Args: []string{"application/octet-stream"}},
+				{Directive: "access_log", Args: []string{"/dev/stdout"}},
 				{
 					Directive: "server",
 					Args:      []string{},

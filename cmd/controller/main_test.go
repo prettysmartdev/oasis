@@ -4,15 +4,15 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"strings"
 	"testing"
 )
 
-// TestControllerStartup confirms the management server starts and binds to 127.0.0.1.
+// TestControllerStartup confirms the management server starts and is reachable.
+// In production the host is 0.0.0.0 inside the container; Docker's
+// -p 127.0.0.1:PORT:PORT binding restricts external access at the host level.
 func TestControllerStartup(t *testing.T) {
 	mux := http.NewServeMux()
 
-	// Bind to 127.0.0.1 with OS-assigned port — never 0.0.0.0.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("failed to listen: %v", err)
@@ -32,11 +32,6 @@ func TestControllerStartup(t *testing.T) {
 
 	addr := ln.Addr().String()
 
-	// Loopback assertion — the management API must never bind to 0.0.0.0.
-	if !strings.HasPrefix(addr, "127.0.0.1:") {
-		t.Errorf("management API bound to %q — must bind to 127.0.0.1", addr)
-	}
-
 	// Confirm the server is reachable.
 	resp, err := http.Get("http://" + addr + "/api/v1/status") //nolint:noctx
 	if err != nil {
@@ -54,24 +49,24 @@ func TestControllerStartup(t *testing.T) {
 	}
 }
 
-// TestBuildMgmtAddr confirms buildMgmtAddr always produces a loopback address
-// and never returns an address that would bind to 0.0.0.0.
+// TestBuildMgmtAddr confirms buildMgmtAddr correctly combines host and port.
+// Inside Docker the host is 0.0.0.0 (Docker's -p 127.0.0.1:... binding on the host
+// enforces loopback-only access). For direct binary execution outside Docker,
+// operators set OASIS_MGMT_HOST=127.0.0.1.
 func TestBuildMgmtAddr(t *testing.T) {
 	cases := []struct {
+		host string
 		port string
 		want string
 	}{
-		{"04515", "127.0.0.1:04515"},
-		{"7700", "127.0.0.1:7700"},
-		{"8080", "127.0.0.1:8080"},
+		{"0.0.0.0", "04515", "0.0.0.0:04515"},
+		{"127.0.0.1", "04515", "127.0.0.1:04515"},
+		{"0.0.0.0", "7700", "0.0.0.0:7700"},
 	}
 	for _, tc := range cases {
-		got := buildMgmtAddr(tc.port)
+		got := buildMgmtAddr(tc.host, tc.port)
 		if got != tc.want {
-			t.Errorf("buildMgmtAddr(%q) = %q, want %q", tc.port, got, tc.want)
-		}
-		if !strings.HasPrefix(got, "127.0.0.1:") {
-			t.Errorf("buildMgmtAddr(%q) = %q — host must be 127.0.0.1, never 0.0.0.0", tc.port, got)
+			t.Errorf("buildMgmtAddr(%q, %q) = %q, want %q", tc.host, tc.port, got, tc.want)
 		}
 	}
 }

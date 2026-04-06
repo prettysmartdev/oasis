@@ -412,15 +412,16 @@ func TestSetupAlreadyStarted(t *testing.T) {
 	}
 }
 
-// TestReadOnlyHandlerRejectsWriteMethods verifies that write endpoints return 405
-// when a read-only handler does not register them (Go 1.22+ mux behaviour).
-func TestReadOnlyHandlerRejectsWriteMethods(t *testing.T) {
+// TestReadOnlyHandlerProxiesWriteMethods verifies that write requests to the tsnet
+// (read-only) handler are forwarded to NGINX rather than handled by Go. In production
+// NGINX serves the dashboard and app upstreams; in tests it is absent so we expect a
+// 502 Bad Gateway from the reverse proxy, not a 2xx success from Go itself.
+func TestReadOnlyHandlerProxiesWriteMethods(t *testing.T) {
 	h := newReadOnlyHandler(t)
 	mux := serveMux(h)
 
-	// GET /api/v1/apps is registered; POST to the same path → 405.
 	rec := doRequest(t, mux, http.MethodPost, "/api/v1/apps", `{"name":"x","slug":"x","upstreamURL":"http://localhost"}`)
-	if rec.Code != http.StatusMethodNotAllowed {
-		t.Errorf("read-only POST /api/v1/apps: got %d, want 405; body: %s", rec.Code, rec.Body.String())
+	if rec.Code == http.StatusOK || rec.Code == http.StatusCreated {
+		t.Errorf("read-only POST /api/v1/apps must not succeed on the tsnet handler; got %d", rec.Code)
 	}
 }

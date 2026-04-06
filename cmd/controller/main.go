@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
@@ -22,10 +23,12 @@ import (
 // version is embedded at build time via -ldflags "-X main.version=$(git describe --tags --always)".
 var version = "dev"
 
-// buildMgmtAddr returns the management API listen address for the given port.
-// The host is always 127.0.0.1 — the management API must never bind to 0.0.0.0.
-func buildMgmtAddr(port string) string {
-	return "127.0.0.1:" + port
+// buildMgmtAddr returns the management API listen address for the given host and port.
+// Inside a Docker container the default host is 0.0.0.0 so Docker's port forwarding
+// can reach the process; host-side security is enforced by the -p 127.0.0.1:... binding
+// in the docker run command. For direct (non-Docker) execution set OASIS_MGMT_HOST=127.0.0.1.
+func buildMgmtAddr(host, port string) string {
+	return host + ":" + port
 }
 
 // envOrDefault returns the environment variable value or the default if unset.
@@ -55,10 +58,12 @@ func isTsnetConfigured(stateDir string) bool {
 func main() {
 	// 1. Read env vars.
 	port := envOrDefault("OASIS_MGMT_PORT", "04515")
+	mgmtHost := envOrDefault("OASIS_MGMT_HOST", "0.0.0.0")
 	hostname := envOrDefault("OASIS_HOSTNAME", "oasis")
 	dbPath := envOrDefault("OASIS_DB_PATH", "/data/db/oasis.db")
 	tsStateDir := envOrDefault("OASIS_TS_STATE_DIR", "/data/ts-state")
 	logLevel := envOrDefault("OASIS_LOG_LEVEL", "info")
+	tsAPIKey := os.Getenv("TAILSCALE_API_KEY") // optional; enables automatic conflict resolution
 
 	level := slog.LevelInfo
 	if logLevel == "debug" {
@@ -81,12 +86,16 @@ func main() {
 		os.Exit(1)
 	}
 	defer store.Close()
+	logger.Info("database opened", "path", dbPath)
 
 	// 3. Create NGINX configurator.
 	configurator := nginx.NewWithConfig("/etc/nginx/nginx.conf", nginx.FindNginxPID)
 
 	// 4. Create tsnet node (not started yet — started by /api/v1/setup or on restart).
 	node := tsnetpkg.NewNode(hostname, tsStateDir)
+	if tsAPIKey != "" {
+		node.SetTailscaleAPIKey(tsAPIKey)
+	}
 
 	// 5. Create API handlers.
 	mgmtHandler := api.New(store, configurator, node, false)
@@ -95,8 +104,34 @@ func main() {
 	tsnetHandler := api.New(store, configurator, node, true)
 	tsnetHandler.SetVersion(version)
 
+	// startTsnetServer begins serving the read-only webapp API on the given tsnet listener.
+	// Called both from the auto-start path (step 7) and from the first-run setup callback.
+	startTsnetServer := func(tsLn net.Listener) {
+		tsnetMux := http.NewServeMux()
+		tsnetHandler.RegisterRoutes(tsnetMux)
+		go func() {
+			srv := &http.Server{Handler: tsnetMux}
+			if err := srv.Serve(tsLn); err != nil && err != http.ErrServerClosed {
+				logger.Error("tsnet server error", "err", err)
+			}
+		}()
+		if ip, err := node.TailscaleIP(); err == nil && ip != "" {
+			logger.Info("tsnet webapp API started", "ip", ip)
+		}
+		apps, _ := store.ListApps(context.Background())
+		if applyErr := configurator.Apply(context.Background(), apps); applyErr != nil {
+			logger.Warn("failed to apply nginx config", "err", applyErr)
+		} else {
+			logger.Info("nginx config applied")
+		}
+	}
+
+	// Register the setup callback so first-run setup (via POST /api/v1/setup) also
+	// starts the webapp API server without requiring a container restart.
+	mgmtHandler.SetOnSetup(startTsnetServer)
+
 	// 6. Start management API server (loopback only).
-	mgmtAddr := buildMgmtAddr(port)
+	mgmtAddr := buildMgmtAddr(mgmtHost, port)
 	ln, err := net.Listen("tcp", mgmtAddr)
 	if err != nil {
 		logger.Error("failed to bind management API",
@@ -123,49 +158,36 @@ func main() {
 	}()
 	logger.Info("oasis controller started", "version", version, "mgmt", mgmtAddr)
 
-	// 7. If tsnet state already exists, start the node and serve the webapp API.
-	var tsnetServer *http.Server
+	// 7. If tsnet state already exists, reconnect and serve the webapp API.
 	if isTsnetConfigured(tsStateDir) {
+		logger.Info("tsnet state found, starting node", "hostname", hostname)
 		tsLn, err := node.Start(ctx)
 		if err != nil {
+			var conflictErr *tsnetpkg.HostnameConflictError
+			if errors.As(err, &conflictErr) {
+				// A hostname conflict means the status API and webapp would
+				// report the wrong hostname. Exit so the operator can resolve
+				// the conflict rather than silently running with a wrong name.
+				logger.Error("hostname conflict — exiting", "err", conflictErr)
+				os.Exit(1)
+			}
 			logger.Warn("failed to start tsnet node (will retry via /api/v1/setup)", "err", err)
 		} else {
-			// Apply current NGINX config now that we have a Tailscale IP.
-			apps, _ := store.ListApps(ctx)
-			if ip, err := node.TailscaleIP(); err == nil && ip != "" {
-				if err := configurator.Apply(ctx, apps, ip); err != nil {
-					logger.Warn("failed to apply nginx config", "err", err)
-				}
-			}
-
-			// Serve the read-only webapp API on the tsnet listener.
-			tsnetMux := http.NewServeMux()
-			tsnetHandler.RegisterRoutes(tsnetMux)
-			tsnetServer = &http.Server{Handler: tsnetMux}
-			go func() {
-				if err := tsnetServer.Serve(tsLn); err != nil && err != http.ErrServerClosed {
-					logger.Error("tsnet server error", "err", err)
-				}
-			}()
-			if ip, _ := node.TailscaleIP(); ip != "" {
-				logger.Info("tsnet webapp API started", "ip", ip)
-			}
+			startTsnetServer(tsLn)
 		}
+	} else {
+		logger.Info("tsnet not yet configured — run oasis init to set up")
 	}
 
 	// 8. Start background health checker.
 	checker := health.New(store, 30*time.Second)
 	go checker.Start(ctx)
+	logger.Info("health checker started", "interval", 30*time.Second)
 
 	// 9. Block until shutdown signal; graceful shutdown in reverse order.
 	<-ctx.Done()
 	logger.Info("shutting down")
 
-	if tsnetServer != nil {
-		if err := tsnetServer.Close(); err != nil {
-			logger.Error("error closing tsnet server", "err", err)
-		}
-	}
 	if err := mgmtServer.Close(); err != nil {
 		logger.Error("error closing management server", "err", err)
 	}

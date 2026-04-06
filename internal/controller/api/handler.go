@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/http/httputil"
 	"net/url"
 	"os"
 	"regexp"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/prettysmartdev/oasis/internal/controller/db"
 	"github.com/prettysmartdev/oasis/internal/controller/nginx"
+	tsnetpkg "github.com/prettysmartdev/oasis/internal/controller/tsnet"
 )
 
 // TsnetNode is the subset of tsnet.Node used by the API handler.
@@ -36,6 +38,7 @@ type Handler struct {
 	node     TsnetNode
 	readOnly bool
 	version  string
+	onSetup  func(net.Listener) // called with the tsnet listener after first-run setup
 }
 
 // New creates a new Handler. Pass nil for dependencies not yet available (e.g. in tests).
@@ -53,8 +56,17 @@ func (h *Handler) SetVersion(v string) {
 	h.version = v
 }
 
+// SetOnSetup registers a callback invoked with the tsnet listener after a successful
+// first-run setup. main.go uses this to start the webapp API server without the
+// management handler needing to know about HTTP server lifecycle details.
+func (h *Handler) SetOnSetup(fn func(net.Listener)) {
+	h.onSetup = fn
+}
+
 // RegisterRoutes registers all API routes on the provided mux.
 // Write-mutating routes are omitted when readOnly is true.
+// For the tsnet (readOnly) handler a catch-all reverse proxy to NGINX is added so
+// that the static webapp and app upstreams are reachable via the Tailscale network.
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/status", h.handleStatus)
 	mux.HandleFunc("GET /api/v1/apps", h.handleListApps)
@@ -69,6 +81,12 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("POST /api/v1/apps/{slug}/disable", h.handleDisableApp)
 		mux.HandleFunc("PATCH /api/v1/settings", h.handleUpdateSettings)
 		mux.HandleFunc("POST /api/v1/setup", h.handleSetup)
+	} else {
+		// Tsnet handler: reverse-proxy anything that isn't an /api/v1/ route to
+		// NGINX (static webapp assets, /apps/<slug>/ upstreams). The more-specific
+		// /api/v1/ patterns above always take precedence over this catch-all.
+		nginxURL, _ := url.Parse(nginx.LocalAddr)
+		mux.Handle("/", httputil.NewSingleHostReverseProxy(nginxURL))
 	}
 }
 
@@ -132,9 +150,13 @@ func toAppJSON(a db.App) appJSON {
 }
 
 // triggerNginxReload re-generates and applies the NGINX config.
-// Silently skips if store, nginx, or the tsnet node is unavailable.
+// Silently skips if store, nginx, or the tsnet node is unavailable or not yet started.
 func (h *Handler) triggerNginxReload(ctx context.Context) {
 	if h.store == nil || h.nginx == nil || h.node == nil {
+		return
+	}
+	if _, err := h.node.TailscaleIP(); err != nil {
+		// Node not started yet — skip reload.
 		return
 	}
 	apps, err := h.store.ListApps(ctx)
@@ -142,12 +164,7 @@ func (h *Handler) triggerNginxReload(ctx context.Context) {
 		slog.Warn("nginx reload: list apps failed", "err", err)
 		return
 	}
-	ip, err := h.node.TailscaleIP()
-	if err != nil {
-		// Node not started yet — skip reload.
-		return
-	}
-	if err := h.nginx.Apply(ctx, apps, ip); err != nil {
+	if err := h.nginx.Apply(ctx, apps); err != nil {
 		slog.Warn("nginx reload failed", "err", err)
 	}
 }
@@ -490,9 +507,18 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	if _, err := h.node.Start(r.Context()); err != nil {
+	ln, err := h.node.Start(r.Context())
+	if err != nil {
+		var conflictErr *tsnetpkg.HostnameConflictError
+		if errors.As(err, &conflictErr) {
+			writeError(w, http.StatusConflict, conflictErr.Error(), "HOSTNAME_CONFLICT")
+			return
+		}
 		writeError(w, http.StatusInternalServerError, "failed to start tsnet node", "TSNET_START_FAILED")
 		return
+	}
+	if h.onSetup != nil {
+		h.onSetup(ln)
 	}
 
 	// Return current status.
