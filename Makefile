@@ -6,8 +6,8 @@ LDFLAGS           := -ldflags "-X main.version=$(VERSION)"
 
 GOLANGCI_LINT_VERSION := v1.57.2
 
-.PHONY: install-tools build run build-cli test lint test-integration \
-        _build-controller _build-cli
+.PHONY: install-tools build build-webapp build-cli docker-build run test lint \
+        test-integration _build-controller _build-cli
 
 ## install-tools: Install golangci-lint into the local Go bin path.
 install-tools:
@@ -16,8 +16,16 @@ install-tools:
 	    | sh -s -- -b "$$(go env GOPATH)/bin" $(GOLANGCI_LINT_VERSION)
 	@echo "==> Done. Ensure $$GOPATH/bin is on your PATH."
 
-## build: Build the Docker image (all oasis components).
-build:
+## build: Build all components (webapp + Go binaries).
+build: build-webapp _build-controller _build-cli
+
+## build-webapp: Build the Next.js static export.
+build-webapp:
+	npm --prefix webapp ci
+	npm --prefix webapp run build
+
+## docker-build: Build the Docker image.
+docker-build:
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE_TAG) .
 
 ## run: Run the latest built image.

@@ -24,6 +24,7 @@ Versioning:
 
 Objects:
 - App: { id (uuid), name (string), slug (string, URL-safe), upstreamURL (string), displayName (string), description (string), icon (string, URL or emoji), tags ([]string), enabled (bool), health ("healthy"|"unreachable"|"unknown"), createdAt (RFC3339), updatedAt (RFC3339) }
+  - Note: the webapp uses the presence of `"agent"` in `tags` to decide which dashboard page an item appears on — items tagged `"agent"` appear on the Agents page, all others on the Apps page.
 - Settings: { tailscaleHostname (string), mgmtPort (int), theme ("dark"|"light"|"system") }
   - Note: tailscaleAuthKey is write-only; never returned in GET responses
 - Status: { tailscaleConnected (bool), tailscaleIP (string), tailscaleHostname (string), nginxStatus ("running"|"stopped"|"error"), registeredAppCount (int), version (string) }

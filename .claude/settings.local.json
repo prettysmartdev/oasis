@@ -12,7 +12,26 @@
       "Bash(grep:*)",
       "Bash(wait)",
       "Bash(echo \"EXIT_CODE: $?\")",
-      "Bash(CGO_ENABLED=0 go vet:*)"
+      "Bash(CGO_ENABLED=0 go vet:*)",
+      "Bash(npm install:*)",
+      "Read(//usr/local/bin/**)",
+      "Read(//usr/local/**)",
+      "Bash(ls /lib64/)",
+      "Read(//usr/lib/**)",
+      "Bash(/usr/local/go/bin/go version:*)",
+      "Bash(npm test:*)",
+      "Read(//proc/sys/fs/binfmt_misc/**)",
+      "Bash(apt list:*)",
+      "Bash(apt-get install:*)",
+      "Bash(apt-cache search:*)",
+      "Bash(apt-get update:*)",
+      "Bash(nodejs --version)",
+      "Bash(curl -fsSL https://deb.nodesource.com/setup_22.x)",
+      "Bash(bash -)",
+      "Bash(/usr/bin/node --version)",
+      "Bash(mv /usr/local/bin/node /usr/local/bin/node.x86_backup)",
+      "Bash(ln -s /usr/bin/node /usr/local/bin/node)",
+      "Bash(npm ci:*)"
     ]
   }
 }

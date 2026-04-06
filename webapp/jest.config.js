@@ -14,13 +14,13 @@ const config = {
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
   },
-  // Initial threshold set low (10%) for skeleton code; raise as real logic is added.
+  // Raised to 50% line/function/statement and 40% branch coverage for work item 0004.
   coverageThreshold: {
     global: {
-      lines: 10,
-      functions: 10,
-      branches: 0,
-      statements: 10,
+      lines: 50,
+      functions: 50,
+      branches: 40,
+      statements: 50,
     },
   },
 }

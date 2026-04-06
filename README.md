@@ -11,7 +11,7 @@
 
 **OaSis** is a self-hosted dashboard that discovers, organizes, and exposes your locally-running apps and AI agents exclusively over your [Tailscale](https://tailscale.com) network. One Docker container, no accounts, no open ports — your personal homescreen, accessible from any device on your tailnet.
 
-> **Status:** This repository is under active development. The CLI and controller scaffold are in place; the webapp dashboard is being implemented incrementally.
+> **Status:** This repository is under active development. The CLI, controller scaffold, and initial webapp dashboard are in place; full end-to-end wiring and browser integration tests are planned in upcoming work items.
 
 ---
 
@@ -181,8 +181,9 @@ internal/
     docker/           # Docker CLI wrapper (pull, run, start, stop, logs, …)
     table/            # Output formatting: tables, key/value lists, spinner
 webapp/               # Next.js App Router (static export)
-  app/                # Pages and layouts
-  components/         # shadcn/ui components (added as features land)
+  app/                # Root page, layout, and global styles
+  components/         # AppIcon, BottomNav, EmptyState, HomescreenLayout, TimeOfDayBackground + shadcn/ui primitives
+  lib/                # Typed API fetch helpers (api.ts) and shared utilities
   __tests__/          # Jest unit tests
 .github/workflows/
   ci.yml              # Lint + test + build on every push/PR
@@ -201,7 +202,8 @@ aspec/                # Living design specification — source of truth
 |---|---|
 | `make install-tools` | Install `air` (live reload) and `golangci-lint` into `$GOPATH/bin` |
 | `make dev` | Start controller with live reload + Next.js dev server (parallel) |
-| `make build` | Build `./bin/controller` and `./bin/oasis` |
+| `make build` | Build webapp static export + `./bin/controller` + `./bin/oasis` |
+| `make build-webapp` | Build the Next.js static export to `dist/webapp/` only |
 | `make build-cli` | Build `./bin/oasis` only |
 | `make test` | Go unit tests (race detector) + Jest unit tests |
 | `make lint` | golangci-lint + TypeScript type check + Next.js lint |
@@ -222,6 +224,7 @@ All variables are documented in `.env.local.example`. Copy that file to `.env.lo
 | `OASIS_DB_PATH` | `/data/db/oasis.db` | SQLite database path inside the container |
 | `OASIS_TS_STATE_DIR` | `/data/ts-state` | Tailscale tsnet state directory inside the container |
 | `OASIS_LOG_LEVEL` | `info` | Log verbosity: `info` \| `debug` \| `warn` \| `error` |
+| `NEXT_PUBLIC_API_BASE_URL` | `` (same origin) | Base URL for controller API calls from the webapp. Leave empty in production (NGINX serves both); set to `http://localhost:04515` for local dev. |
 
 ---
 

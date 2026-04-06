@@ -9,6 +9,10 @@ services:
       - oasis-ts-state:/data/ts-state
     environment:
       - OASIS_MGMT_PORT=04515
+      # NEXT_PUBLIC_API_BASE_URL is a Next.js build-time variable (inlined by `next build`).
+      # It has no effect on the pre-built static assets served from this container.
+      # Set it in .env.local when running `next dev` locally to point at the controller.
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:04515
       # TS_AUTHKEY is intentionally omitted here — pass via .env.local for local dev
       # In CI this job is a no-op stub (work item 0001); real integration tests come later.
 
