@@ -51,7 +51,8 @@
       "Bash(go doc:*)",
       "Bash(go vet:*)",
       "Bash(echo \"exit=$?\")",
-      "Bash(wc:*)"
+      "Bash(wc:*)",
+      "Bash(echo \"BUILD EXIT: $?\")"
     ]
   }
 }

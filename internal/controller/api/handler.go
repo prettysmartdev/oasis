@@ -84,6 +84,7 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/agents/{slug}", h.handleGetAgent)
 	mux.HandleFunc("GET /api/v1/agents/{slug}/runs/latest", h.handleGetLatestAgentRun)
 	mux.HandleFunc("POST /api/v1/agents/{slug}/webhook", h.handleAgentWebhook)
+	mux.HandleFunc("POST /api/v1/agents/{slug}/run", h.handleTriggerAgentRun)
 
 	if !h.readOnly {
 		mux.HandleFunc("POST /api/v1/apps", h.handleCreateApp)
@@ -100,7 +101,6 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 		mux.HandleFunc("DELETE /api/v1/agents/{slug}", h.handleDeleteAgent)
 		mux.HandleFunc("POST /api/v1/agents/{slug}/enable", h.handleEnableAgent)
 		mux.HandleFunc("POST /api/v1/agents/{slug}/disable", h.handleDisableAgent)
-		mux.HandleFunc("POST /api/v1/agents/{slug}/run", h.handleTriggerAgentRun)
 	} else {
 		// Tsnet handler: reverse-proxy anything that isn't an /api/v1/ route to
 		// NGINX (static webapp assets, /apps/<slug>/ upstreams). The more-specific
