@@ -52,7 +52,12 @@
       "Bash(go vet:*)",
       "Bash(echo \"exit=$?\")",
       "Bash(wc:*)",
-      "Bash(echo \"BUILD EXIT: $?\")"
+      "Bash(echo \"BUILD EXIT: $?\")",
+      "Bash(convert --version)",
+      "Bash(inkscape --version)",
+      "Bash(node:*)",
+      "Bash(echo \"Go exit: $?\")",
+      "Bash(go run:*)"
     ]
   }
 }

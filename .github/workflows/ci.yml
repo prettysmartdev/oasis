@@ -136,6 +136,27 @@ jobs:
           npm --prefix webapp ci
           npm --prefix webapp run build
 
+      - name: Verify PWA build artifacts
+        run: |
+          test -f dist/webapp/sw.js || { echo "ERROR: dist/webapp/sw.js missing"; exit 1; }
+          test -f dist/webapp/manifest.json || { echo "ERROR: dist/webapp/manifest.json missing"; exit 1; }
+          node -e "
+            const m = JSON.parse(require('fs').readFileSync('dist/webapp/manifest.json','utf8'));
+            const required = ['name','short_name','icons','start_url','display'];
+            const missing = required.filter(k => !m[k]);
+            if (missing.length) { console.error('manifest.json missing fields:', missing.join(', ')); process.exit(1); }
+            console.log('manifest.json OK:', required.join(', '));
+          "
+          for f in \
+            dist/webapp/icons/icon-192.png \
+            dist/webapp/icons/icon-512.png \
+            dist/webapp/icons/icon-maskable-192.png \
+            dist/webapp/icons/icon-maskable-512.png \
+            dist/webapp/apple-touch-icon.png; do
+            test -f "$f" || { echo "ERROR: $f missing"; exit 1; }
+          done
+          echo "All PWA build artifacts present."
+
       - name: Build Docker image
         uses: docker/build-push-action@v6
         with:

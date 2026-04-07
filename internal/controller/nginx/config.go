@@ -129,6 +129,16 @@ func buildConfig(apps []db.App) (string, error) {
 		locations = append(locations, loc)
 	}
 
+	// Service worker — must not be cached so browsers always re-validate on load.
+	locations = append(locations, crossplane.Directive{
+		Directive: "location",
+		Args:      []string{"=", "/sw.js"},
+		Block: &[]crossplane.Directive{
+			{Directive: "root", Args: []string{"/srv/webapp"}},
+			{Directive: "add_header", Args: []string{"Cache-Control", `"no-store, no-cache, must-revalidate"`}},
+		},
+	})
+
 	// Fallback location for the static webapp.
 	locations = append(locations, crossplane.Directive{
 		Directive: "location",

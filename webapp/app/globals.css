@@ -47,6 +47,21 @@
   display: none;
 }
 
+/* Safe-area inset for bottom nav — prevents iOS home indicator from obscuring buttons */
+.bottom-nav-safe {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+/* Offline page wifi-off icon pulse animation */
+@keyframes offlinePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.offline-icon-animate {
+  animation: offlinePulse 2s ease-in-out infinite;
+}
+
 /* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .oasis-bg-animate {

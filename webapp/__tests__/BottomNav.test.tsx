@@ -53,6 +53,12 @@ describe('BottomNav', () => {
     expect(logoBtn).toHaveAttribute('aria-expanded', 'false')
   })
 
+  it('outermost nav has bottom-nav-safe class for iOS safe-area inset', () => {
+    render(<BottomNav />)
+    const nav = screen.getByRole('navigation', { name: /Bottom navigation/i })
+    expect(nav).toHaveClass('bottom-nav-safe')
+  })
+
   it('settings dialog shows fallback message when status is unavailable', async () => {
     const { fetchStatus } = require('@/lib/api') as { fetchStatus: jest.Mock }
     fetchStatus.mockRejectedValueOnce(new Error('network error'))

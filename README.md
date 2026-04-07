@@ -11,6 +11,8 @@
 
 **OaSis** is a self-hosted dashboard that discovers, organizes, and exposes your locally-running apps and AI agents exclusively over your [Tailscale](https://tailscale.com) network. One Docker container, no accounts, no open ports — your personal homescreen, accessible from any device on your tailnet.
 
+Install the dashboard as a **Progressive Web App** on any phone or tablet on your tailnet and it launches in full-screen standalone mode, just like a native app. See [Installing OaSis as an App](docs/pwa.md) for iOS and Android instructions.
+
 > **Status:** This repository is under active development. The CLI, controller scaffold, and initial webapp dashboard are in place; full end-to-end wiring and browser integration tests are planned in upcoming work items.
 
 ---
@@ -24,6 +26,7 @@
 - [Repository structure](#repository-structure)
 - [Build targets](#build-targets)
 - [Environment variables](#environment-variables)
+- [Installing as an app (PWA)](docs/pwa.md)
 - [Contributing](#contributing)
 
 ---
@@ -67,7 +70,7 @@ No root/sudo required. On Linux, your user must be in the `docker` group.
 | Go | 1.22+ | `go version` |
 | Node.js | 20+ | `node --version` |
 | npm | 10+ | Bundled with Node.js 20 |
-| Docker | Any recent | Required for `make test-integration` and `make docker-build` |
+| Docker | Any recent | Required for `make test-integration` and `make build-docker` |
 | make | Any | Standard on macOS/Linux |
 
 ---
@@ -152,7 +155,7 @@ make test-integration   # docker compose -f docker-compose.dev.yml up
 ### Docker image
 
 ```sh
-make docker-build   # builds the multi-stage image locally (no push)
+make build-docker   # builds the multi-stage image locally (no push)
 ```
 
 ---
@@ -205,10 +208,11 @@ aspec/                # Living design specification — source of truth
 | `make build` | Build webapp static export + `./bin/controller` + `./bin/oasis` |
 | `make build-webapp` | Build the Next.js static export to `dist/webapp/` only |
 | `make build-cli` | Build `./bin/oasis` only |
+| `make generate-icons` | Regenerate PWA icon PNGs from `webapp/public/icons/icon.svg` |
 | `make test` | Go unit tests (race detector) + Jest unit tests |
 | `make lint` | golangci-lint + TypeScript type check + Next.js lint |
 | `make test-integration` | Full integration test suite via Docker Compose |
-| `make docker-build` | Build Docker image locally |
+| `make build-docker` | Build Docker image locally (runs `generate-icons` first) |
 
 ---
 

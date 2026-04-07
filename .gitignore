@@ -41,6 +41,10 @@ webapp/.next/
 webapp/node_modules/
 webapp/coverage/
 
+# PWA build artifacts — generated fresh by `npm run build`, never committed
+webapp/public/sw.js
+webapp/public/workbox-*.js
+
 # env file
 .env
 

@@ -80,7 +80,7 @@ export default function BottomNav() {
     <>
       <nav
         aria-label="Bottom navigation"
-        className="fixed bottom-0 inset-x-0 z-40 flex items-end justify-between px-6 pb-8 pointer-events-none"
+        className="fixed bottom-0 inset-x-0 z-40 flex items-end justify-between px-6 pb-8 pointer-events-none bottom-nav-safe"
       >
         {/* Logo / chat button */}
         <div className="pointer-events-auto flex items-end gap-3">
@@ -164,7 +164,7 @@ export default function BottomNav() {
                         : 'text-amber-400'
                   }
                 >
-                  {status.nginxStatus}
+                  {status.nginxStatus === 'running' ? 'Running' : status.nginxStatus === 'error' ? 'Error' : status.nginxStatus === 'stopped' ? 'Stopped' : status.nginxStatus}
                 </dd>
               </div>
               <div className="flex justify-between items-center py-2 border-b border-slate-700">

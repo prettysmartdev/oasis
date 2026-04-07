@@ -57,3 +57,80 @@ Machine use:
 - The controller's management API is the primary machine interface; use it for scripting, automation, and integrations
 - The webapp does not expose a machine-readable interface; all programmatic access should use the management API
 - The OaSis CLI wraps the management API for convenient scripting from the host machine
+
+## Progressive Web App (PWA)
+
+OaSis is a fully installable PWA. Any device on the tailnet can add the dashboard to its homescreen and launch it as a standalone app — no browser chrome, themed status bar, persistent icon.
+
+### Web App Manifest
+
+`webapp/public/manifest.json` declares the installability contract:
+
+| Field | Value | Purpose |
+|---|---|---|
+| `name` | `OaSis` | Full name shown in install dialogs and app drawers |
+| `short_name` | `OaSis` | Name shown under the homescreen icon on space-constrained launchers |
+| `display` | `standalone` | Removes browser chrome (address bar, tabs) when launched from homescreen |
+| `orientation` | `portrait-primary` | Locks portrait orientation; dashboard is not optimized for landscape |
+| `background_color` | `#0f172a` (slate-900) | Shown while the app is loading; matches night-mode background to prevent white flash |
+| `theme_color` | `#2DD4BF` (teal) | Android status bar and Chrome tab strip color; matches primary brand color |
+| `start_url` | `/` | App launches at the root of the tsnet hostname |
+
+The manifest is served at `/manifest.json` from the static export root. It must stay in sync with `aspec/uxui/interface.md` brand colors — if the palette changes, update both.
+
+### Icons
+
+Four PNG icons live at `webapp/public/icons/` and are committed as source assets:
+
+| File | Size | Purpose |
+|---|---|---|
+| `icon-192.png` | 192×192 | Standard Android/Chrome homescreen icon |
+| `icon-512.png` | 512×512 | Android splash screen and PWA install dialogs |
+| `icon-maskable-192.png` | 192×192 | Android adaptive icon (safe zone: center 80%) |
+| `icon-maskable-512.png` | 512×512 | Android adaptive icon, large variant |
+
+`webapp/public/apple-touch-icon.png` at 180×180 is used by iOS Safari's "Add to Home Screen" flow (iOS ignores the manifest `icons` list).
+
+The source SVG is at `webapp/public/icons/icon.svg` (palm tree / oasis motif). To regenerate all PNGs from the SVG:
+
+```sh
+make generate-icons
+```
+
+`make build-docker` runs `generate-icons` first automatically.
+
+### Service Worker
+
+The service worker (`sw.js`) is generated at build time by `@ducanh2912/next-pwa` (workbox) and placed at the export root so it is served from `/sw.js`. Its scope is `/`.
+
+Caching strategy:
+
+| Route pattern | Strategy | Notes |
+|---|---|---|
+| `/api/v1/*` | NetworkFirst | Always fetches fresh data; falls back to stale cache if offline (60 s max-age, 32 entries) |
+| Static assets | CacheFirst | JS, CSS, images cached indefinitely; versioned filenames ensure cache busting |
+| Navigation (HTML) | NetworkFirst → offline fallback | On failure, serves `/offline` |
+
+**`sw.js` must not be cached by NGINX.** The NGINX config generator emits a `Cache-Control: no-store, no-cache, must-revalidate` header specifically for `location = /sw.js` so browsers always re-validate it on page load.
+
+The service worker is disabled in `NODE_ENV=development` to avoid interfering with Next.js hot reload.
+
+**Platform limitations:**
+- iOS Safari does not support Background Sync or Push Notifications in PWAs. The offline fallback and manifest are the full extent of PWA support on iOS.
+- iOS splash/launch images (`apple-touch-startup-image`) are out of scope; the `background_color` serves as a reasonable fallback.
+
+### Offline Fallback
+
+`/offline` is a static page (rendered from `webapp/app/offline/page.tsx`) served by the service worker when the network is unavailable and no cached document exists. It shows:
+
+- A "You're offline" headline
+- A reconnect prompt referencing the tailnet
+- An animated wifi-off icon (animation disabled when `prefers-reduced-motion` is set)
+
+### iOS Safe-Area Insets
+
+`viewport-fit: cover` is set in the layout viewport config so app content extends behind the iOS notch and Dynamic Island. The `.bottom-nav-safe` CSS class applies `padding-bottom: env(safe-area-inset-bottom, 0px)` to the bottom navigation bar so buttons are not obscured by the iOS home indicator. This has no effect on Android or desktop.
+
+### HTTPS Requirement
+
+Service workers only register on HTTPS (or localhost). The oasis tailnet interface is served exclusively over HTTPS via tsnet's automatic TLS certificate (see work item 0002). PWA features will silently do nothing if HTTP is used — this invariant must remain intact.

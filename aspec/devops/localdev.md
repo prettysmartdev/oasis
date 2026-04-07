@@ -17,6 +17,12 @@ Developer Loop:
 - The Next.js dev server runs on localhost:3000
 - Build and test the CLI locally with `make build-cli` — the binary outputs to ./bin/oasis and can be run against the local dev controller
 
+Regenerating PWA icons:
+- `make generate-icons` — regenerates all five PNG icon files (`icon-192.png`, `icon-512.png`, `icon-maskable-192.png`, `icon-maskable-512.png`, `apple-touch-icon.png`) from `webapp/public/icons/icon.svg` using the `sharp` Node.js library (installed as a webapp dev dependency)
+- Run this whenever `icon.svg` is updated
+- `make build-docker` depends on `generate-icons`, so icon generation is automatic during Docker builds
+- Do not gitignore the generated PNGs — they are committed source assets; only `webapp/public/sw.js` and `webapp/public/workbox-*.js` are gitignored (they are produced fresh by `npm run build`)
+
 Local testing:
 - `make test` — runs `go test ./...` (with -race) and `npm test` for all unit tests
 - `make lint` — runs golangci-lint on Go code and tsc --noEmit + next lint on the webapp
