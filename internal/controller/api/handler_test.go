@@ -26,6 +26,12 @@ func (m *mockNode) TailscaleIP() (string, error) {
 	}
 	return "100.64.0.1", nil
 }
+func (m *mockNode) TailscaleDNSName(_ context.Context) (string, error) {
+	if !m.started {
+		return "", fmt.Errorf("not started")
+	}
+	return "oasis.test-tailnet.ts.net", nil
+}
 func (m *mockNode) Start(_ context.Context) (net.Listener, error) {
 	return nil, fmt.Errorf("mock: Start not implemented")
 }

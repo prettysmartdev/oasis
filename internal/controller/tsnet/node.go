@@ -6,6 +6,7 @@ package tsnet
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,12 +22,13 @@ import (
 
 // Node represents the oasis Tailscale tsnet node.
 type Node struct {
-	srv      *tsnet.Server
-	hostname string
-	stateDir string
-	tsAPIKey string // optional Tailscale API key for hostname conflict resolution
-	mu       sync.Mutex
-	started  bool
+	srv         *tsnet.Server
+	hostname    string
+	stateDir    string
+	tsAPIKey    string // optional Tailscale API key for hostname conflict resolution
+	httpRedirLn net.Listener // HTTP→HTTPS redirect listener (nil when TLS not active)
+	mu          sync.Mutex
+	started     bool
 }
 
 // HostnameConflictError is returned by Start when the configured hostname is
@@ -114,15 +116,77 @@ func (n *Node) Start(ctx context.Context) (net.Listener, error) {
 		}
 	}
 
-	ln, err := srv.Listen("tcp", ":80")
+	// oasis always requires HTTPS. ListenTLS failing means HTTPS is not enabled
+	// in the Tailscale admin console or MagicDNS is off — both are hard requirements.
+	ln, err := srv.ListenTLS("tcp", ":443")
 	if err != nil {
 		srv.Close()
-		return nil, fmt.Errorf("tsnet listen: %w", err)
+		return nil, fmt.Errorf("tsnet: HTTPS is required — enable it at https://tailscale.com/kb/1153/enabling-https/ : %w", err)
 	}
+
+	// Eagerly provision the TLS certificate. Fail fast if it cannot be obtained
+	// so the caller can surface a clear error rather than accepting connections
+	// that immediately fail the TLS handshake.
+	if err := n.warmTLSCert(ctx, srv); err != nil {
+		_ = ln.Close()
+		srv.Close()
+		return nil, fmt.Errorf("tsnet: TLS certificate unavailable — ensure HTTPS is enabled at https://tailscale.com/kb/1153/enabling-https/ : %w", err)
+	}
+
+	// Start an HTTP→HTTPS redirect on :80 so plain-HTTP visitors are upgraded.
+	n.startHTTPRedirect(srv)
 
 	n.srv = srv
 	n.started = true
 	return ln, nil
+}
+
+// warmTLSCert eagerly provisions the Tailscale TLS certificate so it is ready
+// before the first HTTPS connection arrives. Without this, the first connection
+// stalls while the ACME exchange completes (typically 2-5 s on first run).
+// Returns an error if the certificate cannot be obtained — the caller should
+// treat this as fatal since all incoming HTTPS connections would fail the handshake.
+func (n *Node) warmTLSCert(ctx context.Context, srv *tsnet.Server) error {
+	lc, err := srv.LocalClient()
+	if err != nil {
+		return fmt.Errorf("no local client: %w", err)
+	}
+	st, err := lc.Status(ctx)
+	if err != nil {
+		return fmt.Errorf("get status: %w", err)
+	}
+	if st.Self == nil || st.Self.DNSName == "" {
+		return fmt.Errorf("DNS name not available — ensure MagicDNS is enabled in the Tailscale admin console")
+	}
+	dnsName := strings.TrimSuffix(st.Self.DNSName, ".")
+	if _, err := lc.GetCertificate(&tls.ClientHelloInfo{ServerName: dnsName}); err != nil {
+		return fmt.Errorf("certificate provisioning failed for %q: %w", dnsName, err)
+	}
+	slog.Info("tsnet: TLS certificate ready", "domain", dnsName)
+	return nil
+}
+
+// startHTTPRedirect starts a plain-HTTP listener on :80 that redirects every
+// request to the HTTPS equivalent. Called only when TLS is active on :443.
+// The listener is stored so Close() can shut it down gracefully.
+func (n *Node) startHTTPRedirect(srv *tsnet.Server) {
+	ln, err := srv.Listen("tcp", ":80")
+	if err != nil {
+		slog.Warn("tsnet: could not start HTTP redirect on :80", "err", err)
+		return
+	}
+	n.httpRedirLn = ln
+	go func() {
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			target := "https://" + r.Host + r.URL.RequestURI()
+			http.Redirect(w, r, target, http.StatusMovedPermanently)
+		})
+		if err := http.Serve(ln, handler); err != nil &&
+			!strings.Contains(err.Error(), "use of closed network connection") {
+			slog.Warn("tsnet: HTTP redirect server stopped", "err", err)
+		}
+	}()
+	slog.Info("tsnet: HTTP redirect listening on :80")
 }
 
 // attemptStart creates a fresh tsnet.Server, starts it, waits for it to be
@@ -276,6 +340,33 @@ func (n *Node) deleteDevice(ctx context.Context, nodeID string) error {
 	return fmt.Errorf("HTTP %d: %s", resp.StatusCode, body)
 }
 
+// TailscaleDNSName returns the node's fully-qualified DNS name on the tailnet
+// (e.g. "oasis.example.ts.net"). Returns an error if the node has not been started.
+func (n *Node) TailscaleDNSName(ctx context.Context) (string, error) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+
+	if !n.started || n.srv == nil {
+		return "", fmt.Errorf("tsnet node not started")
+	}
+
+	lc, err := n.srv.LocalClient()
+	if err != nil {
+		return "", fmt.Errorf("local client: %w", err)
+	}
+
+	st, err := lc.Status(ctx)
+	if err != nil {
+		return "", fmt.Errorf("status: %w", err)
+	}
+
+	if st.Self == nil || st.Self.DNSName == "" {
+		return "", fmt.Errorf("no DNS name available")
+	}
+
+	return strings.TrimSuffix(st.Self.DNSName, "."), nil
+}
+
 // TailscaleIP returns the node's IPv4 Tailscale address.
 // Returns an error if the node has not been started.
 func (n *Node) TailscaleIP() (string, error) {
@@ -300,6 +391,10 @@ func (n *Node) Close() error {
 
 	if n.srv == nil {
 		return nil
+	}
+	if n.httpRedirLn != nil {
+		_ = n.httpRedirLn.Close()
+		n.httpRedirLn = nil
 	}
 	err := n.srv.Close()
 	n.started = false

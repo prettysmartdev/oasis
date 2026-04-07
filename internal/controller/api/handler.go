@@ -26,6 +26,7 @@ import (
 type TsnetNode interface {
 	IsStarted() bool
 	TailscaleIP() (string, error)
+	TailscaleDNSName(ctx context.Context) (string, error)
 	Start(ctx context.Context) (net.Listener, error)
 }
 
@@ -175,6 +176,7 @@ type statusResponse struct {
 	TailscaleConnected bool   `json:"tailscaleConnected"`
 	TailscaleIP        string `json:"tailscaleIP"`
 	TailscaleHostname  string `json:"tailscaleHostname"`
+	TailscaleDNSName   string `json:"tailscaleDNSName"`
 	NginxStatus        string `json:"nginxStatus"`
 	RegisteredAppCount int    `json:"registeredAppCount"`
 	Version            string `json:"version"`
@@ -187,6 +189,9 @@ func (h *Handler) handleStatus(w http.ResponseWriter, r *http.Request) {
 		resp.TailscaleConnected = true
 		if ip, err := h.node.TailscaleIP(); err == nil {
 			resp.TailscaleIP = ip
+		}
+		if dnsName, err := h.node.TailscaleDNSName(r.Context()); err == nil {
+			resp.TailscaleDNSName = dnsName
 		}
 	}
 
@@ -525,6 +530,9 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 	resp := statusResponse{Version: h.version, TailscaleConnected: true}
 	if ip, err := h.node.TailscaleIP(); err == nil {
 		resp.TailscaleIP = ip
+	}
+	if dnsName, err := h.node.TailscaleDNSName(r.Context()); err == nil {
+		resp.TailscaleDNSName = dnsName
 	}
 	if h.store != nil {
 		settings, err := h.store.GetSettings(r.Context())

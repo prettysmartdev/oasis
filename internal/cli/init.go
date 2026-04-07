@@ -123,6 +123,7 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 	type statusResp struct {
 		TailscaleConnected bool   `json:"tailscaleConnected"`
 		TailscaleHostname  string `json:"tailscaleHostname"`
+		TailscaleDNSName   string `json:"tailscaleDNSName"`
 		Version            string `json:"version"`
 	}
 
@@ -185,7 +186,12 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 		if hostname == "" {
 			hostname = tsHostname
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Your oasis is ready at https://%s.ts.net\n", hostname)
+		oasisURL := sr.TailscaleDNSName
+		if oasisURL == "" {
+			// Fallback: best-effort URL if the controller didn't return a DNS name.
+			oasisURL = hostname + ".ts.net"
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "Your oasis is ready at https://%s\n", oasisURL)
 	}
 
 	return nil

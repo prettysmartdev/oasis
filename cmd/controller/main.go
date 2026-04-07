@@ -115,7 +115,9 @@ func main() {
 				logger.Error("tsnet server error", "err", err)
 			}
 		}()
-		if ip, err := node.TailscaleIP(); err == nil && ip != "" {
+		if dnsName, err := node.TailscaleDNSName(context.Background()); err == nil {
+			logger.Info("tsnet webapp API started", "url", "https://"+dnsName)
+		} else if ip, err := node.TailscaleIP(); err == nil && ip != "" {
 			logger.Info("tsnet webapp API started", "ip", ip)
 		}
 		apps, _ := store.ListApps(context.Background())
