@@ -1,23 +1,32 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { fetchApps, type App, ApiError } from '@/lib/api'
+import { fetchApps, fetchAgents, type App, type Agent, ApiError } from '@/lib/api'
 import HomescreenLayout from '@/components/HomescreenLayout'
 import BottomNav from '@/components/BottomNav'
 import TimeOfDayBackground from '@/components/TimeOfDayBackground'
 
 export default function HomePage() {
-  const [agents, setAgents] = useState<App[]>([])
+  const [agents, setAgents] = useState<Agent[]>([])
   const [apps, setApps] = useState<App[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    fetchApps()
-      .then(({ items }) => {
-        // Split by tags: items with tag 'agent' go to agents, rest to apps
-        setAgents(items.filter((a) => a.tags.includes('agent')))
-        setApps(items.filter((a) => !a.tags.includes('agent')))
+    // Fetch apps and agents in parallel; treat agents 404 as empty (API may not yet be deployed)
+    Promise.all([
+      fetchApps(),
+      fetchAgents().catch((err) => {
+        // Gracefully degrade if the agents endpoint is not yet available
+        if (err instanceof ApiError && err.status === 404) {
+          return { items: [] as Agent[], total: 0 }
+        }
+        throw err
+      }),
+    ])
+      .then(([appsResponse, agentsResponse]) => {
+        setApps(appsResponse.items)
+        setAgents(agentsResponse.items)
       })
       .catch((err) => {
         setError(

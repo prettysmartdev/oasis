@@ -1,8 +1,26 @@
 import React from 'react'
 import { render, screen, waitFor, act } from '@testing-library/react'
 import HomePage from '../app/page'
+import type { Agent, App } from '@/lib/api'
 
-// Suppress framer-motion motion.a usage in AppIcon
+// Mock the API module to control what fetchApps and fetchAgents return
+jest.mock('@/lib/api', () => {
+  const actual = jest.requireActual('@/lib/api')
+  return {
+    ...actual,
+    fetchApps: jest.fn(),
+    fetchAgents: jest.fn(),
+    fetchStatus: jest.fn(),
+  }
+})
+
+import { fetchApps, fetchAgents, fetchStatus } from '@/lib/api'
+
+const mockFetchApps = fetchApps as jest.Mock
+const mockFetchAgents = fetchAgents as jest.Mock
+const mockFetchStatus = fetchStatus as jest.Mock
+
+// Suppress framer-motion motion.button usage in AgentIcon
 jest.mock('framer-motion', () => {
   const React = require('react')
   return {
@@ -12,22 +30,49 @@ jest.mock('framer-motion', () => {
           <a ref={ref} {...props}>{children}</a>
         )
       ),
+      button: React.forwardRef(
+        ({ children, whileHover, transition, ...props }: React.ComponentPropsWithoutRef<'button'> & { whileHover?: unknown; transition?: unknown }, ref: React.Ref<HTMLButtonElement>) => (
+          <button ref={ref} {...props}>{children}</button>
+        )
+      ),
     },
     useReducedMotion: jest.fn().mockReturnValue(false),
   }
 })
 
-// Default fetch mock: empty list, resolves immediately
-function mockFetchEmpty() {
-  global.fetch = jest.fn().mockResolvedValue({
-    ok: true,
-    json: async () => ({ items: [], total: 0 }),
-  } as unknown as Response)
+const emptyApps = { items: [] as App[], total: 0 }
+const emptyAgents = { items: [] as Agent[], total: 0 }
+
+function makeAgent(overrides: Partial<Agent> = {}): Agent {
+  return {
+    id: 'agent-1',
+    name: 'Test Agent',
+    slug: 'test-agent',
+    description: '',
+    icon: '🤖',
+    prompt: 'Do something',
+    trigger: 'tap',
+    schedule: '',
+    outputFmt: 'markdown',
+    enabled: true,
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T00:00:00Z',
+    ...overrides,
+  }
 }
 
 describe('HomePage', () => {
   beforeEach(() => {
-    mockFetchEmpty()
+    mockFetchApps.mockResolvedValue(emptyApps)
+    mockFetchAgents.mockResolvedValue(emptyAgents)
+    mockFetchStatus.mockResolvedValue({
+      tailscaleConnected: true,
+      tailscaleIP: '100.64.0.1',
+      tailscaleHostname: 'oasis',
+      nginxStatus: 'running',
+      registeredAppCount: 0,
+      version: '0.1.0',
+    })
   })
 
   afterEach(() => {
@@ -41,25 +86,19 @@ describe('HomePage', () => {
     expect(document.body).toBeTruthy()
   })
 
-  it('renders without crashing when the API returns an empty list', async () => {
-    mockFetchEmpty()
+  it('renders without crashing when the API returns empty lists', async () => {
     await act(async () => {
       render(<HomePage />)
     })
-    // After data loads, layout renders with empty-state content
     await waitFor(() => {
       expect(screen.getByText('AGENTS')).toBeInTheDocument()
       expect(screen.getByText('APPS')).toBeInTheDocument()
     })
   })
 
-  it('shows an error banner when the API returns a non-200 status', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: false,
-      status: 503,
-      statusText: 'Service Unavailable',
-      json: async () => ({ error: 'controller offline' }),
-    } as unknown as Response)
+  it('shows an error banner when the apps API returns an error', async () => {
+    const { ApiError } = jest.requireActual('@/lib/api')
+    mockFetchApps.mockRejectedValue(new ApiError(503, 'controller offline'))
 
     await act(async () => {
       render(<HomePage />)
@@ -72,7 +111,7 @@ describe('HomePage', () => {
   })
 
   it('shows a generic error banner on network failure', async () => {
-    global.fetch = jest.fn().mockRejectedValue(new TypeError('Failed to fetch'))
+    mockFetchApps.mockRejectedValue(new TypeError('Failed to fetch'))
 
     await act(async () => {
       render(<HomePage />)
@@ -84,36 +123,31 @@ describe('HomePage', () => {
     })
   })
 
-  it('renders agent icons when API returns items tagged agent', async () => {
-    global.fetch = jest.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        items: [
-          {
-            id: 'a1',
-            name: 'agent-one',
-            slug: 'agent-one',
-            upstreamURL: 'http://localhost:8001',
-            displayName: 'Agent One',
-            description: '',
-            icon: '🤖',
-            tags: ['agent'],
-            enabled: true,
-            health: 'healthy',
-            createdAt: '2024-01-01T00:00:00Z',
-            updatedAt: '2024-01-01T00:00:00Z',
-          },
-        ],
-        total: 1,
-      }),
-    } as unknown as Response)
+  it('renders agent icons when agents API returns items', async () => {
+    const agentItem = makeAgent({ id: 'a1', name: 'Agent One' })
+    mockFetchAgents.mockResolvedValue({ items: [agentItem], total: 1 })
 
     await act(async () => {
       render(<HomePage />)
     })
 
     await waitFor(() => {
-      expect(screen.getByRole('link', { name: /Agent One, healthy status/i })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Open agent: Agent One/i })).toBeInTheDocument()
     })
+  })
+
+  it('degrades gracefully when the agents endpoint returns 404', async () => {
+    const { ApiError } = jest.requireActual('@/lib/api')
+    mockFetchAgents.mockRejectedValue(new ApiError(404, 'not found'))
+
+    await act(async () => {
+      render(<HomePage />)
+    })
+
+    // Should still render without an error banner — agents 404 is treated as empty
+    await waitFor(() => {
+      expect(screen.getByText('AGENTS')).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('alert')).toBeNull()
   })
 })

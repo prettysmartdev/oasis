@@ -1,7 +1,7 @@
 import React from 'react'
 import { render, screen, fireEvent } from '@testing-library/react'
 import HomescreenLayout from '@/components/HomescreenLayout'
-import type { App } from '@/lib/api'
+import type { App, Agent } from '@/lib/api'
 
 // Mock AppIcon to keep tests focused on layout behaviour
 jest.mock('@/components/AppIcon', () => {
@@ -11,12 +11,25 @@ jest.mock('@/components/AppIcon', () => {
   }
 })
 
+// Mock AgentIcon to keep tests focused on layout behaviour
+jest.mock('@/components/AgentIcon', () => {
+  const React = require('react')
+  return function MockAgentIcon({ agent }: { agent: Agent }) {
+    return <div data-testid={`agent-icon-${agent.id}`}>{agent.name}</div>
+  }
+})
+
 // Mock framer-motion used transitively
 jest.mock('framer-motion', () => ({
   motion: {
     a: require('react').forwardRef(
       ({ children, ...props }: React.ComponentPropsWithoutRef<'a'>, ref: React.Ref<HTMLAnchorElement>) => (
         <a ref={ref} {...props}>{children}</a>
+      )
+    ),
+    button: require('react').forwardRef(
+      ({ children, ...props }: React.ComponentPropsWithoutRef<'button'>, ref: React.Ref<HTMLButtonElement>) => (
+        <button ref={ref} {...props}>{children}</button>
       )
     ),
   },
@@ -35,6 +48,24 @@ function makeApp(overrides: Partial<App> = {}): App {
     tags: [],
     enabled: true,
     health: 'healthy',
+    createdAt: '2024-01-01T00:00:00Z',
+    updatedAt: '2024-01-01T00:00:00Z',
+    ...overrides,
+  }
+}
+
+function makeAgent(overrides: Partial<Agent> = {}): Agent {
+  return {
+    id: 'agent-1',
+    name: 'agent-one',
+    slug: 'agent-one',
+    description: '',
+    icon: '🤖',
+    prompt: 'Do something',
+    trigger: 'tap',
+    schedule: '',
+    outputFmt: 'markdown',
+    enabled: true,
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-01T00:00:00Z',
     ...overrides,
@@ -66,9 +97,9 @@ describe('HomescreenLayout', () => {
   })
 
   it('renders agent icons when agents are provided', () => {
-    const agents = [makeApp({ id: 'a1', displayName: 'Agent One' })]
+    const agents = [makeAgent({ id: 'a1', name: 'Agent One' })]
     render(<HomescreenLayout agents={agents} apps={[]} />)
-    expect(screen.getByTestId('app-icon-a1')).toBeInTheDocument()
+    expect(screen.getByTestId('agent-icon-a1')).toBeInTheDocument()
   })
 
   it('renders app icons when apps are provided', () => {

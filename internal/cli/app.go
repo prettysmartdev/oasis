@@ -9,6 +9,7 @@ import (
 
 	"github.com/prettysmartdev/oasis/internal/cli/client"
 	"github.com/prettysmartdev/oasis/internal/cli/table"
+	cliyaml "github.com/prettysmartdev/oasis/internal/cli/yaml"
 	"github.com/spf13/cobra"
 )
 
@@ -23,6 +24,7 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 func init() {
 	appCmd.AddCommand(
 		newAppAddCmd(),
+		newAppNewCmd(),
 		newAppListCmd(),
 		newAppShowCmd(),
 		newAppRemoveCmd(),
@@ -46,13 +48,53 @@ type appRecord struct {
 }
 
 func newAppAddCmd() *cobra.Command {
-	var name, upstreamURL, slug, description, icon, tags string
+	var name, upstreamURL, slug, description, icon, tags, filePath string
 
 	cmd := &cobra.Command{
 		Use:   "add",
 		Short: "Register a new app",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			// Client-side validation.
+			// File-based registration.
+			if filePath != "" {
+				flagsChanged := cmd.Flags().Changed("name") || cmd.Flags().Changed("url") ||
+					cmd.Flags().Changed("slug") || cmd.Flags().Changed("description") ||
+					cmd.Flags().Changed("icon") || cmd.Flags().Changed("tags")
+				if flagsChanged {
+					fmt.Fprintln(os.Stderr, "Flags ignored when -f is provided")
+				}
+				def, err := cliyaml.ParseAppFile(filePath)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err.Error())
+					os.Exit(1)
+				}
+				body := map[string]interface{}{
+					"name":        def.Name,
+					"slug":        def.Slug,
+					"upstreamURL": def.UpstreamURL,
+					"description": def.Description,
+					"icon":        def.Icon,
+					"tags":        def.Tags,
+					"enabled":     true,
+				}
+				var result appRecord
+				if err := newClient().Post("/api/v1/apps", body, &result); err != nil {
+					if apiErr, ok := err.(*client.APIError); ok {
+						if apiErr.HTTPStatus == 409 {
+							fmt.Fprintf(os.Stderr, "A slug named %q already exists — choose a different slug.\n", def.Slug)
+							os.Exit(1)
+						}
+						fmt.Fprintln(os.Stderr, apiErr.Message)
+						os.Exit(1)
+					}
+					return err
+				}
+				if !quiet {
+					fmt.Fprintf(cmd.OutOrStdout(), "App %q registered at /%s\n", def.Name, def.Slug)
+				}
+				return nil
+			}
+
+			// Flag-based registration.
 			if !slugPattern.MatchString(slug) {
 				fmt.Fprintln(os.Stderr, `slug must match [a-z0-9-]+ (e.g. my-app)`)
 				os.Exit(2)
@@ -103,16 +145,76 @@ func newAppAddCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "App display name (required)")
-	cmd.Flags().StringVar(&upstreamURL, "url", "", "Upstream URL (required, must start with http:// or https://)")
-	cmd.Flags().StringVar(&slug, "slug", "", "URL slug (required, [a-z0-9-]+)")
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "YAML definition file (overrides other flags)")
+	cmd.Flags().StringVar(&name, "name", "", "App display name (required without -f)")
+	cmd.Flags().StringVar(&upstreamURL, "url", "", "Upstream URL (required without -f, must start with http:// or https://)")
+	cmd.Flags().StringVar(&slug, "slug", "", "URL slug (required without -f, [a-z0-9-]+)")
 	cmd.Flags().StringVar(&description, "description", "", "App description")
 	cmd.Flags().StringVar(&icon, "icon", "", "App icon URL or emoji")
 	cmd.Flags().StringVar(&tags, "tags", "", "Comma-separated tags")
 
-	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("url")
-	_ = cmd.MarkFlagRequired("slug")
+	return cmd
+}
+
+// sanitizeName converts a name into a URL-safe slug: lowercase, spaces to hyphens,
+// non-[a-z0-9-] characters removed.
+func sanitizeName(name string) string {
+	s := strings.ToLower(name)
+	s = strings.ReplaceAll(s, " ", "-")
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func newAppNewCmd() *cobra.Command {
+	var outputPath string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "new <name>",
+		Short: "Generate an app YAML definition template",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name := args[0]
+			slug := sanitizeName(name)
+
+			path := outputPath
+			if path == "" {
+				path = "./oasis-app-" + slug + ".yaml"
+			}
+
+			if !force {
+				if _, err := os.Stat(path); err == nil {
+					fmt.Fprintf(os.Stderr, "File %s already exists. Use --force to overwrite.\n", path)
+					os.Exit(1)
+				}
+			}
+
+			content := fmt.Sprintf(`# OaSis app definition — fill in the fields and run: oasis app add -f ./oasis-app.yaml
+name: "%s"
+slug: "%s"
+upstreamUrl: ""
+description: ""
+icon: ""
+tags: []
+`, name, slug)
+
+			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+				return fmt.Errorf("write file %s: %w", path, err)
+			}
+			if !quiet {
+				fmt.Fprintf(cmd.OutOrStdout(), "App template written to %s\n", path)
+			}
+			return nil
+		},
+	}
+
+	cmd.Flags().StringVar(&outputPath, "output", "", "Output file path (default: ./oasis-app-<slug>.yaml)")
+	cmd.Flags().BoolVar(&force, "force", false, "Overwrite existing file")
 
 	return cmd
 }

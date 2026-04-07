@@ -78,6 +78,11 @@ func New(path string) (*Store, error) {
 	db.SetMaxOpenConns(1)
 
 	s := &Store{db: db}
+	// Enable foreign-key enforcement; SQLite disables it by default.
+	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("enable foreign keys: %w", err)
+	}
 	if err := s.migrate(context.Background()); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("migrate: %w", err)
@@ -96,11 +101,13 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version >= 1 {
+	if version >= 2 {
 		return nil
 	}
 
-	_, err := s.db.ExecContext(ctx, `
+	if version == 0 {
+		// Migration 1: core tables.
+		_, err := s.db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS apps (
     id           TEXT PRIMARY KEY,
     name         TEXT NOT NULL,
@@ -124,8 +131,40 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 
 INSERT OR IGNORE INTO settings (id) VALUES (1);
+`)
+		if err != nil {
+			return err
+		}
+	}
 
-PRAGMA user_version = 1;
+	// Migration 2: agents tables.
+	_, err := s.db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS agents (
+    id          TEXT PRIMARY KEY,
+    name        TEXT NOT NULL,
+    slug        TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL DEFAULT '',
+    icon        TEXT NOT NULL DEFAULT '',
+    prompt      TEXT NOT NULL,
+    trigger     TEXT NOT NULL,
+    schedule    TEXT NOT NULL DEFAULT '',
+    output_fmt  TEXT NOT NULL DEFAULT 'markdown',
+    enabled     INTEGER NOT NULL DEFAULT 1,
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS agent_runs (
+    id          TEXT PRIMARY KEY,
+    agent_id    TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    trigger_src TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    output      TEXT NOT NULL DEFAULT '',
+    started_at  TEXT NOT NULL,
+    finished_at TEXT
+);
+
+PRAGMA user_version = 2;
 `)
 	return err
 }

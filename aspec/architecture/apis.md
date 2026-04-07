@@ -25,6 +25,8 @@ Versioning:
 Objects:
 - App: { id (uuid), name (string), slug (string, URL-safe), upstreamURL (string), displayName (string), description (string), icon (string, URL or emoji), tags ([]string), enabled (bool), health ("healthy"|"unreachable"|"unknown"), createdAt (RFC3339), updatedAt (RFC3339) }
   - Note: the webapp uses the presence of `"agent"` in `tags` to decide which dashboard page an item appears on — items tagged `"agent"` appear on the Agents page, all others on the Apps page.
+- Agent: { id (uuid), name (string), slug (string, URL-safe), description (string), icon (string, URL or emoji), prompt (string), trigger ("tap"|"schedule"|"webhook"), schedule (string, cron expression — present only when trigger="schedule"), outputFmt ("markdown"|"html"|"plaintext"), enabled (bool), createdAt (RFC3339), updatedAt (RFC3339) }
+- AgentRun: { id (uuid), agentId (uuid), triggerSrc ("tap"|"schedule"|"webhook"), status ("running"|"done"|"error"), output (string), startedAt (RFC3339), finishedAt (RFC3339, omitted if still running) }
 - Settings: { tailscaleHostname (string), mgmtPort (int), theme ("dark"|"light"|"system") }
   - Note: tailscaleAuthKey is write-only; never returned in GET responses
 - Status: { tailscaleConnected (bool), tailscaleIP (string), tailscaleHostname (string), nginxStatus ("running"|"stopped"|"error"), registeredAppCount (int), version (string) }
@@ -56,6 +58,53 @@ Conventions:
 - DELETE /api/v1/apps/:slug     — remove an app
 - POST   /api/v1/apps/:slug/enable  — enable a disabled app
 - POST   /api/v1/apps/:slug/disable — disable an app (hidden from dashboard, route removed from NGINX)
+
+### Agents
+
+Management-API-only endpoints (write):
+- POST   /api/v1/agents                       — register a new agent; 409 SLUG_CONFLICT if slug already taken
+- PATCH  /api/v1/agents/:slug                 — update agent fields (partial update; only provided fields are changed)
+- DELETE /api/v1/agents/:slug                 — remove agent and all associated run history; 404 if not found
+- POST   /api/v1/agents/:slug/enable          — enable a disabled agent; 404 if not found
+- POST   /api/v1/agents/:slug/disable         — disable an agent; 404 if not found
+- POST   /api/v1/agents/:slug/run             — trigger an immediate tap-run; returns 202 { "runId": "<uuid>" }; 409 RUN_IN_PROGRESS if a run is already active (response includes runId of the active run)
+
+Both management and tsnet API endpoints (read + webhook):
+- GET    /api/v1/agents                       — list all agents; returns { "items": [...], "total": N }
+- GET    /api/v1/agents/:slug                 — get a single agent; 404 if not found
+- POST   /api/v1/agents/:slug/webhook         — public webhook trigger; returns 202 { "runId": "<uuid>" }; 409 RUN_IN_PROGRESS if already active; 409 AGENT_DISABLED if agent is disabled
+- GET    /api/v1/agents/:slug/runs/latest     — most recent AgentRun for the agent; 404 if none exist
+- GET    /api/v1/agents/runs/:runId           — get a specific AgentRun by id; 404 if not found
+
+Validation rules:
+- trigger must be one of: tap, schedule, webhook; error code INVALID_TRIGGER (400)
+- schedule is required when trigger=schedule; must be a valid 5-field cron expression; error code INVALID_SCHEDULE (400)
+- outputFmt must be one of: markdown, html, plaintext; defaults to markdown; error code INVALID_OUTPUT_FMT (400)
+- slug must match [a-z0-9-]+; must be unique across all agents; error code SLUG_CONFLICT (409)
+
+YAML definition file (app add -f / agent add -f):
+
+App YAML fields:
+```yaml
+name:        <string, required>
+slug:        <string, required, [a-z0-9-]+>
+upstreamUrl: <string, required, HTTP/HTTPS URL>
+description: <string, optional>
+icon:        <string, optional, emoji or URL>
+tags:        <[]string, optional>
+```
+
+Agent YAML fields:
+```yaml
+name:       <string, required>
+slug:       <string, required, [a-z0-9-]+>
+prompt:     <string, required>
+trigger:    <string, required — tap|schedule|webhook>
+schedule:   <string, required when trigger=schedule — 5-field cron expression>
+outputFmt:  <string, optional — markdown|html|plaintext; default: markdown>
+description:<string, optional>
+icon:       <string, optional, emoji or URL>
+```
 
 ### Settings (management API only)
 - GET   /api/v1/settings        — get current settings (authKey omitted)

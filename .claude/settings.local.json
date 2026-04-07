@@ -50,7 +50,8 @@
       "Bash(go env:*)",
       "Bash(go doc:*)",
       "Bash(go vet:*)",
-      "Bash(echo \"exit=$?\")"
+      "Bash(echo \"exit=$?\")",
+      "Bash(wc:*)"
     ]
   }
 }

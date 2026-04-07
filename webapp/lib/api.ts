@@ -8,6 +8,55 @@
  * See `aspec/architecture/apis.md` for the full API contract.
  */
 
+/** An agent trigger type. */
+export type AgentTrigger = 'tap' | 'schedule' | 'webhook'
+
+/** An agent output format. */
+export type AgentOutputFmt = 'markdown' | 'html' | 'plaintext'
+
+/** An agent run status. */
+export type AgentRunStatus = 'running' | 'done' | 'error'
+
+/**
+ * A registered agent as returned by GET /api/v1/agents.
+ */
+export interface Agent {
+  id: string
+  name: string
+  slug: string
+  description: string
+  icon: string
+  prompt: string
+  trigger: AgentTrigger
+  schedule: string
+  outputFmt: AgentOutputFmt
+  enabled: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+/** An agent run as returned by GET /api/v1/agents/runs/:runId */
+export interface AgentRun {
+  id: string
+  agentId: string
+  triggerSrc: string
+  status: AgentRunStatus
+  output: string
+  startedAt: string
+  finishedAt: string | null
+}
+
+/** Paginated list envelope returned by GET /api/v1/agents */
+export interface AgentsResponse {
+  items: Agent[]
+  total: number
+}
+
+/** Response from triggering a new agent run. */
+export interface TriggerRunResponse {
+  runId: string
+}
+
 /** Health status reported by the controller for a registered app or agent. */
 export type AppHealth = 'healthy' | 'unreachable' | 'unknown'
 
@@ -62,7 +111,12 @@ export interface AppsResponse {
  * response was received).
  */
 export class ApiError extends Error {
-  constructor(public readonly status: number, message: string) {
+  constructor(
+    public readonly status: number,
+    message: string,
+    /** Raw parsed body from the error response, if available. */
+    public readonly body?: Record<string, unknown>
+  ) {
     super(message)
     this.name = 'ApiError'
   }
@@ -79,6 +133,22 @@ async function apiFetch<T>(path: string): Promise<T> {
   return res.json() as Promise<T>
 }
 
+async function apiPost<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method: 'POST',
+    headers: body ? { 'Content-Type': 'application/json' } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const bodyData = await res.json().catch(() => ({ error: res.statusText }))
+    throw new ApiError(res.status, bodyData.error ?? res.statusText, bodyData)
+  }
+  if (res.status === 204 || res.headers.get('content-length') === '0') {
+    return undefined as T
+  }
+  return res.json() as Promise<T>
+}
+
 /** Fetches all registered apps and agents from the controller. */
 export async function fetchApps(): Promise<AppsResponse> {
   return apiFetch<AppsResponse>('/api/v1/apps')
@@ -87,4 +157,24 @@ export async function fetchApps(): Promise<AppsResponse> {
 /** Fetches the current controller health snapshot. */
 export async function fetchStatus(): Promise<Status> {
   return apiFetch<Status>('/api/v1/status')
+}
+
+/** Fetches all registered agents from the controller. */
+export async function fetchAgents(): Promise<AgentsResponse> {
+  return apiFetch<AgentsResponse>('/api/v1/agents')
+}
+
+/** Triggers an agent tap-run. Returns the run ID. */
+export async function triggerAgentRun(slug: string): Promise<TriggerRunResponse> {
+  return apiPost<TriggerRunResponse>(`/api/v1/agents/${slug}/run`)
+}
+
+/** Polls for a specific agent run by ID. */
+export async function fetchAgentRun(runId: string): Promise<AgentRun> {
+  return apiFetch<AgentRun>(`/api/v1/agents/runs/${runId}`)
+}
+
+/** Fetches the latest agent run for a given agent slug. */
+export async function fetchLatestAgentRun(slug: string): Promise<AgentRun> {
+  return apiFetch<AgentRun>(`/api/v1/agents/${slug}/runs/latest`)
 }

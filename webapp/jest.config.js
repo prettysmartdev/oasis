@@ -13,6 +13,12 @@ const config = {
   // Allow absolute imports via @/* path alias
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    // Stub react-markdown and remark-gfm in tests — they are ESM-only and
+    // cannot be transformed by Jest's CommonJS transformer. The AgentWindow
+    // component is tested via its integration in page/layout smoke tests;
+    // unit rendering of markdown output is covered by e2e tests.
+    '^react-markdown$': '<rootDir>/__mocks__/react-markdown.tsx',
+    '^remark-gfm$': '<rootDir>/__mocks__/remark-gfm.ts',
   },
   // Raised to 50% line/function/statement and 40% branch coverage for work item 0004.
   coverageThreshold: {

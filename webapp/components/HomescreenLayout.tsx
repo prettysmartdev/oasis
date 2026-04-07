@@ -1,8 +1,9 @@
 'use client'
 
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { type App } from '@/lib/api'
+import { type App, type Agent } from '@/lib/api'
 import AppIcon from '@/components/AppIcon'
+import AgentIcon from '@/components/AgentIcon'
 import EmptyState from '@/components/EmptyState'
 
 /**
@@ -16,7 +17,7 @@ import EmptyState from '@/components/EmptyState'
  * Left/right arrow keys switch between pages for keyboard users.
  */
 interface HomescreenLayoutProps {
-  agents: App[]
+  agents: Agent[]
   apps: App[]
 }
 
@@ -118,7 +119,7 @@ export default function HomescreenLayout({ agents, apps }: HomescreenLayoutProps
           ) : (
             <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6 p-6 pb-32 content-start">
               {agents.map((agent) => (
-                <AppIcon key={agent.id} app={agent} />
+                <AgentIcon key={agent.id} agent={agent} />
               ))}
             </div>
           )}

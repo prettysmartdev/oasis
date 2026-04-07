@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	agentpkg "github.com/prettysmartdev/oasis/internal/controller/agent"
 	"github.com/prettysmartdev/oasis/internal/controller/api"
 	"github.com/prettysmartdev/oasis/internal/controller/db"
 	"github.com/prettysmartdev/oasis/internal/controller/health"
@@ -185,6 +186,11 @@ func main() {
 	checker := health.New(store, 30*time.Second)
 	go checker.Start(ctx)
 	logger.Info("health checker started", "interval", 30*time.Second)
+
+	// 8b. Start agent scheduler.
+	scheduler := agentpkg.NewScheduler(store)
+	go scheduler.Start(ctx)
+	logger.Info("agent scheduler started")
 
 	// 9. Block until shutdown signal; graceful shutdown in reverse order.
 	<-ctx.Done()

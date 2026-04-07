@@ -5,8 +5,10 @@ go 1.26.1
 require (
 	github.com/aluttik/go-crossplane v0.0.0-20210526174032-f987c53bd056
 	github.com/google/uuid v1.6.0
+	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/term v0.38.0
+	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.29.10
 	tailscale.com v1.96.5
 )

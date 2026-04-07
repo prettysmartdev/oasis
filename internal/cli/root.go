@@ -53,6 +53,7 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&quiet, "quiet", false, "Suppress non-error output")
 
 	rootCmd.AddCommand(appCmd)
+	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(settingsCmd)
 	rootCmd.AddCommand(newInitCmd())
 	rootCmd.AddCommand(newStartCmd())
