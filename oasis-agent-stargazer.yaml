@@ -1,0 +1,9 @@
+# OaSis agent definition — fill in the fields and run: oasis agent add -f ./oasis-agent.yaml
+name: "stargazer"
+slug: "stargazer"
+description: "Checks on the number of stars in all the prettysmart repos"
+icon: "⭐️"
+prompt: "Use the GitHub API to check on the stargazer count for these 4 repos in the prettysmartdev org: amux, oasis, aspec, alog. present each repo and their star count in a nicely formatted table."
+trigger: "tap"
+schedule: ""
+outputFmt: "markdown"
