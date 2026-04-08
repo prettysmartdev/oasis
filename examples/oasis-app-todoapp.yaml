@@ -1,0 +1,7 @@
+# OaSis app definition — fill in the fields and run: oasis app add -f ./oasis-app.yaml
+name: "todoapp"
+slug: "todoapp"
+upstreamUrl: "http://host.docker.internal:3000"
+description: "A todo app for oasis"
+icon: "✅"
+tags: []
