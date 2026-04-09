@@ -19,9 +19,10 @@ import EmptyState from '@/components/EmptyState'
 interface HomescreenLayoutProps {
   agents: Agent[]
   apps: App[]
+  onOpenProxyApp: (app: App) => void
 }
 
-export default function HomescreenLayout({ agents, apps }: HomescreenLayoutProps) {
+export default function HomescreenLayout({ agents, apps, onOpenProxyApp }: HomescreenLayoutProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const [scrollProgress, setScrollProgress] = useState(0) // 0 = agents, 1 = apps
 
@@ -135,7 +136,7 @@ export default function HomescreenLayout({ agents, apps }: HomescreenLayoutProps
           ) : (
             <div className="grid grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-6 p-6 pb-32 content-start">
               {apps.map((app) => (
-                <AppIcon key={app.id} app={app} />
+                <AppIcon key={app.id} app={app} onOpenProxyApp={onOpenProxyApp} />
               ))}
             </div>
           )}

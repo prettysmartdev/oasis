@@ -80,6 +80,7 @@ export interface App {
   tags: string[]
   enabled: boolean
   health: AppHealth
+  accessType: 'direct' | 'proxy'
   createdAt: string
   updatedAt: string
 }

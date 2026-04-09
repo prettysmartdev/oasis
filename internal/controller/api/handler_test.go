@@ -418,6 +418,167 @@ func TestSetupAlreadyStarted(t *testing.T) {
 	}
 }
 
+// TestCreateAppWithProxyAccessType verifies that POST /api/v1/apps with accessType:"proxy"
+// returns 201 and the response contains accessType:"proxy".
+func TestCreateAppWithProxyAccessType(t *testing.T) {
+	h := newTestHandler(t)
+	mux := serveMux(h)
+
+	body := `{"name":"Proxy App","slug":"proxy-app","upstreamURL":"http://localhost:8080","accessType":"proxy"}`
+	rec := doRequest(t, mux, http.MethodPost, "/api/v1/apps", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status: got %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["accessType"] != "proxy" {
+		t.Errorf("accessType: got %v, want %q", resp["accessType"], "proxy")
+	}
+}
+
+// TestCreateAppWithOmittedAccessType verifies that POST /api/v1/apps without an accessType
+// field defaults to "proxy" in the response.
+func TestCreateAppWithOmittedAccessType(t *testing.T) {
+	h := newTestHandler(t)
+	mux := serveMux(h)
+
+	body := `{"name":"Default Access App","slug":"default-access-app","upstreamURL":"http://localhost:8081"}`
+	rec := doRequest(t, mux, http.MethodPost, "/api/v1/apps", body)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status: got %d, want 201; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["accessType"] != "proxy" {
+		t.Errorf("accessType default: got %v, want %q", resp["accessType"], "proxy")
+	}
+}
+
+// TestCreateAppWithInvalidAccessType verifies that POST /api/v1/apps with an unrecognised
+// accessType value returns 400 with code INVALID_ACCESS_TYPE.
+func TestCreateAppWithInvalidAccessType(t *testing.T) {
+	h := newTestHandler(t)
+	mux := serveMux(h)
+
+	body := `{"name":"Bad Access App","slug":"bad-access-app","upstreamURL":"http://localhost:8082","accessType":"invalid"}`
+	rec := doRequest(t, mux, http.MethodPost, "/api/v1/apps", body)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status: got %d, want 400; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["code"] != "INVALID_ACCESS_TYPE" {
+		t.Errorf("error code: got %v, want %q", resp["code"], "INVALID_ACCESS_TYPE")
+	}
+}
+
+// TestUpdateAppAccessType verifies that PATCH /api/v1/apps/{slug} can change accessType,
+// and a subsequent GET reflects the new value.
+func TestUpdateAppAccessType(t *testing.T) {
+	h := newTestHandler(t)
+	mux := serveMux(h)
+
+	// Create a direct app.
+	createBody := `{"name":"Update Access App","slug":"update-access-app","upstreamURL":"http://localhost:9010","accessType":"direct"}`
+	if rec := doRequest(t, mux, http.MethodPost, "/api/v1/apps", createBody); rec.Code != http.StatusCreated {
+		t.Fatalf("create app: got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	// Patch it to proxy.
+	patchRec := doRequest(t, mux, http.MethodPatch, "/api/v1/apps/update-access-app", `{"accessType":"proxy"}`)
+	if patchRec.Code != http.StatusOK {
+		t.Fatalf("patch app: got %d; body: %s", patchRec.Code, patchRec.Body.String())
+	}
+
+	// Verify GET now returns accessType "proxy".
+	getRec := doRequest(t, mux, http.MethodGet, "/api/v1/apps/update-access-app", "")
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("get app: got %d", getRec.Code)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(getRec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("unmarshal get response: %v", err)
+	}
+	if got["accessType"] != "proxy" {
+		t.Errorf("accessType after patch: got %v, want %q", got["accessType"], "proxy")
+	}
+}
+
+// TestListAppsIncludesAccessType verifies that GET /api/v1/apps returns the correct
+// accessType for each app in the items list.
+func TestListAppsIncludesAccessType(t *testing.T) {
+	h := newTestHandler(t)
+	mux := serveMux(h)
+
+	// Create a direct app and a proxy app.
+	doRequest(t, mux, http.MethodPost, "/api/v1/apps",
+		`{"name":"Direct App","slug":"list-direct-app","upstreamURL":"http://localhost:9020","accessType":"direct"}`)
+	doRequest(t, mux, http.MethodPost, "/api/v1/apps",
+		`{"name":"Proxy App","slug":"list-proxy-app","upstreamURL":"http://localhost:9021","accessType":"proxy"}`)
+
+	rec := doRequest(t, mux, http.MethodGet, "/api/v1/apps", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("list apps: got %d", rec.Code)
+	}
+
+	var resp struct {
+		Items []map[string]any `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal list response: %v", err)
+	}
+	if len(resp.Items) != 2 {
+		t.Fatalf("expected 2 items, got %d", len(resp.Items))
+	}
+
+	bySlug := make(map[string]map[string]any, len(resp.Items))
+	for _, item := range resp.Items {
+		slug, _ := item["slug"].(string)
+		bySlug[slug] = item
+	}
+
+	if bySlug["list-direct-app"]["accessType"] != "direct" {
+		t.Errorf("list-direct-app accessType: got %v, want %q", bySlug["list-direct-app"]["accessType"], "direct")
+	}
+	if bySlug["list-proxy-app"]["accessType"] != "proxy" {
+		t.Errorf("list-proxy-app accessType: got %v, want %q", bySlug["list-proxy-app"]["accessType"], "proxy")
+	}
+}
+
+// TestGetAppIncludesAccessType verifies that GET /api/v1/apps/{slug} includes accessType
+// in the response body.
+func TestGetAppIncludesAccessType(t *testing.T) {
+	h := newTestHandler(t)
+	mux := serveMux(h)
+
+	createBody := `{"name":"Get Access App","slug":"get-access-app","upstreamURL":"http://localhost:9030","accessType":"proxy"}`
+	if rec := doRequest(t, mux, http.MethodPost, "/api/v1/apps", createBody); rec.Code != http.StatusCreated {
+		t.Fatalf("create app: got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	rec := doRequest(t, mux, http.MethodGet, "/api/v1/apps/get-access-app", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("get app: got %d; body: %s", rec.Code, rec.Body.String())
+	}
+
+	var resp map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal response: %v", err)
+	}
+	if resp["accessType"] != "proxy" {
+		t.Errorf("accessType: got %v, want %q", resp["accessType"], "proxy")
+	}
+}
+
 // TestReadOnlyHandlerProxiesWriteMethods verifies that write requests to the tsnet
 // (read-only) handler are forwarded to NGINX rather than handled by Go. In production
 // NGINX serves the dashboard and app upstreams; in tests it is absent so we expect a

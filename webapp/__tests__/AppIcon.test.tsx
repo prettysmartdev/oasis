@@ -36,6 +36,7 @@ function makeApp(overrides: Partial<App> = {}): App {
     tags: [],
     enabled: true,
     health: 'healthy',
+    accessType: 'direct',
     createdAt: '2024-01-01T00:00:00Z',
     updatedAt: '2024-01-01T00:00:00Z',
     ...overrides,
@@ -122,5 +123,40 @@ describe('AppIcon', () => {
     render(<AppIcon app={makeApp({ displayName: 'My App', health: 'healthy' })} />)
     // Link must still be present and labelled — no animation props should cause a crash
     expect(screen.getByRole('link', { name: /My App, healthy status/i })).toBeInTheDocument()
+  })
+
+  it('proxy app with healthy status calls onOpenProxyApp and does not follow href', () => {
+    const app = makeApp({ accessType: 'proxy', health: 'healthy' })
+    const mockOnOpenProxyApp = jest.fn()
+    render(<AppIcon app={app} onOpenProxyApp={mockOnOpenProxyApp} />)
+    const link = screen.getByRole('link', { name: /Test App, healthy status/i })
+    // href should be '#' for proxy apps, not the upstreamURL
+    expect(link).toHaveAttribute('href', '#')
+    fireEvent.click(link)
+    expect(mockOnOpenProxyApp).toHaveBeenCalledTimes(1)
+    expect(mockOnOpenProxyApp).toHaveBeenCalledWith(app)
+  })
+
+  it('direct app with healthy status has href set to upstreamURL', () => {
+    const app = makeApp({ accessType: 'direct', health: 'healthy' })
+    const mockOnOpenProxyApp = jest.fn()
+    render(<AppIcon app={app} onOpenProxyApp={mockOnOpenProxyApp} />)
+    const link = screen.getByRole('link', { name: /Test App, healthy status/i })
+    expect(link).toHaveAttribute('href', app.upstreamURL)
+    // onOpenProxyApp should not be invoked for direct apps
+    fireEvent.click(link)
+    expect(mockOnOpenProxyApp).not.toHaveBeenCalled()
+  })
+
+  it('proxy app with unreachable status opens error dialog, not iframe', async () => {
+    const app = makeApp({ accessType: 'proxy', health: 'unreachable', displayName: 'Proxy App' })
+    const mockOnOpenProxyApp = jest.fn()
+    render(<AppIcon app={app} onOpenProxyApp={mockOnOpenProxyApp} />)
+    const link = screen.getByRole('link', { name: /Proxy App, unreachable status/i })
+    fireEvent.click(link)
+    await waitFor(() => {
+      expect(screen.getByText('App Unreachable')).toBeInTheDocument()
+    })
+    expect(mockOnOpenProxyApp).not.toHaveBeenCalled()
   })
 })

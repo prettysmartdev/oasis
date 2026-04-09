@@ -5,12 +5,14 @@ import { fetchApps, fetchAgents, type App, type Agent, ApiError } from '@/lib/ap
 import HomescreenLayout from '@/components/HomescreenLayout'
 import BottomNav from '@/components/BottomNav'
 import TimeOfDayBackground from '@/components/TimeOfDayBackground'
+import { AppProxyView } from '@/components/AppProxyView'
 
 export default function HomePage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [apps, setApps] = useState<App[]>([])
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [activeProxyApp, setActiveProxyApp] = useState<App | null>(null)
 
   useEffect(() => {
     // Fetch apps and agents in parallel; treat agents 404 as empty (API may not yet be deployed)
@@ -65,9 +67,10 @@ export default function HomePage() {
           </div>
         </div>
       ) : (
-        <HomescreenLayout agents={agents} apps={apps} />
+        <HomescreenLayout agents={agents} apps={apps} onOpenProxyApp={setActiveProxyApp} />
       )}
-      <BottomNav />
+      {activeProxyApp && <AppProxyView app={activeProxyApp} />}
+      <BottomNav appOpen={activeProxyApp !== null} onCloseApp={() => setActiveProxyApp(null)} />
     </>
   )
 }

@@ -144,6 +144,7 @@ type appJSON struct {
 	Tags        []string `json:"tags"`
 	Enabled     bool     `json:"enabled"`
 	Health      string   `json:"health"`
+	AccessType  string   `json:"accessType"`
 	CreatedAt   string   `json:"createdAt"`
 	UpdatedAt   string   `json:"updatedAt"`
 }
@@ -164,6 +165,7 @@ func toAppJSON(a db.App) appJSON {
 		Tags:        tags,
 		Enabled:     a.Enabled,
 		Health:      a.Health,
+		AccessType:  a.AccessType,
 		CreatedAt:   a.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   a.UpdatedAt.UTC().Format(time.RFC3339),
 	}
@@ -262,6 +264,7 @@ type createAppRequest struct {
 	Icon        string   `json:"icon"`
 	Tags        []string `json:"tags"`
 	Enabled     bool     `json:"enabled"`
+	AccessType  *string  `json:"accessType"`
 }
 
 func (h *Handler) handleCreateApp(w http.ResponseWriter, r *http.Request) {
@@ -286,6 +289,14 @@ func (h *Handler) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "upstreamURL must be a valid http or https URL with a host", "INVALID_UPSTREAM_URL")
 		return
 	}
+	accessType := "proxy" // default
+	if req.AccessType != nil {
+		if *req.AccessType != "direct" && *req.AccessType != "proxy" {
+			writeError(w, http.StatusBadRequest, "accessType must be one of: direct, proxy", "INVALID_ACCESS_TYPE")
+			return
+		}
+		accessType = *req.AccessType
+	}
 	tags := req.Tags
 	if tags == nil {
 		tags = []string{}
@@ -302,6 +313,7 @@ func (h *Handler) handleCreateApp(w http.ResponseWriter, r *http.Request) {
 		Tags:        tags,
 		Enabled:     req.Enabled,
 		Health:      "unknown",
+		AccessType:  accessType,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -343,6 +355,7 @@ type updateAppRequest struct {
 	Icon        *string   `json:"icon"`
 	Tags        *[]string `json:"tags"`
 	Enabled     *bool     `json:"enabled"`
+	AccessType  *string   `json:"accessType"`
 }
 
 func (h *Handler) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
@@ -368,6 +381,12 @@ func (h *Handler) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid request body", "INVALID_BODY")
 		return
 	}
+	if req.AccessType != nil {
+		if *req.AccessType != "direct" && *req.AccessType != "proxy" {
+			writeError(w, http.StatusBadRequest, "accessType must be one of: direct, proxy", "INVALID_ACCESS_TYPE")
+			return
+		}
+	}
 	patch := db.AppPatch{
 		Name:        req.Name,
 		UpstreamURL: req.UpstreamURL,
@@ -376,6 +395,7 @@ func (h *Handler) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 		Icon:        req.Icon,
 		Tags:        req.Tags,
 		Enabled:     req.Enabled,
+		AccessType:  req.AccessType,
 	}
 	updated, err := h.store.UpdateApp(r.Context(), slug, patch)
 	if errors.Is(err, db.ErrNotFound) {
@@ -388,7 +408,7 @@ func (h *Handler) handleUpdateApp(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Reload NGINX if routing-relevant fields changed.
-	if req.Enabled != nil || req.UpstreamURL != nil ||
+	if req.Enabled != nil || req.UpstreamURL != nil || req.AccessType != nil ||
 		(req.Enabled == nil && updated.Enabled != before.Enabled) {
 		h.triggerNginxReload(r.Context())
 	}

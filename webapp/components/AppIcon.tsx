@@ -13,6 +13,7 @@ import {
 
 interface AppIconProps {
   app: App
+  onOpenProxyApp?: (app: App) => void
 }
 
 function isUrl(icon: string): boolean {
@@ -47,36 +48,48 @@ function HealthDot({ health }: { health: App['health'] }) {
 /**
  * Renders a single app or agent as an iOS-style rounded-rect tile.
  *
- * - Clicking/tapping a `healthy` app opens the upstream URL in a new tab.
- * - Clicking an `unreachable` app opens an error dialog instead of navigating.
+ * - `healthy` + `direct`: clicking opens the upstream URL in a new tab.
+ * - `healthy` + `proxy`: clicking calls `onOpenProxyApp` to open the app in a
+ *   full-screen iFrame served through the NGINX proxy at `/apps/<slug>/`.
+ * - `unreachable`: clicking opens an error dialog regardless of access type.
  * - Hover lift animation is suppressed when `prefers-reduced-motion` is set.
  * - Image icons fall back to the 📦 emoji on load error.
  */
-export default function AppIcon({ app }: AppIconProps) {
+export default function AppIcon({ app, onOpenProxyApp }: AppIconProps) {
   const [errorDialogOpen, setErrorDialogOpen] = useState(false)
   const [imgError, setImgError] = useState(false)
   const prefersReducedMotion = useReducedMotion()
 
   const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
-    if (app.health === 'healthy') {
-      // Let the default <a> href handle navigation for healthy apps
+    if (app.health === 'unreachable') {
+      e.preventDefault()
+      setErrorDialogOpen(true)
       return
     }
-    e.preventDefault()
-    if (app.health === 'unreachable') {
-      setErrorDialogOpen(true)
+    if (app.health === 'healthy' && app.accessType === 'proxy') {
+      e.preventDefault()
+      onOpenProxyApp?.(app)
+      return
     }
-    // unknown: prevent navigation (href="#") but do nothing else
+    if (app.health !== 'healthy') {
+      e.preventDefault()
+      // unknown: prevent navigation but do nothing else
+    }
+    // healthy + direct: let the default <a> href handle navigation
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLAnchorElement>) => {
     if (e.key !== 'Enter' && e.key !== ' ') return
     e.preventDefault()
 
-    if (app.health === 'healthy') {
-      window.open(app.upstreamURL, '_blank', 'noopener,noreferrer')
-    } else if (app.health === 'unreachable') {
+    if (app.health === 'unreachable') {
       setErrorDialogOpen(true)
+    } else if (app.health === 'healthy') {
+      if (app.accessType === 'proxy') {
+        onOpenProxyApp?.(app)
+      } else {
+        window.open(app.upstreamURL, '_blank', 'noopener,noreferrer')
+      }
     }
   }
 
@@ -90,8 +103,8 @@ export default function AppIcon({ app }: AppIconProps) {
   return (
     <>
       <motion.a
-        href={app.health === 'healthy' ? app.upstreamURL : '#'}
-        target={app.health === 'healthy' ? '_blank' : undefined}
+        href={app.health === 'healthy' && app.accessType === 'direct' ? app.upstreamURL : '#'}
+        target={app.health === 'healthy' && app.accessType === 'direct' ? '_blank' : undefined}
         rel="noopener noreferrer"
         tabIndex={0}
         aria-label={`${app.displayName}, ${app.health} status`}

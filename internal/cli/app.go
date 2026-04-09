@@ -45,10 +45,11 @@ type appRecord struct {
 	Tags        []string `json:"tags"`
 	Enabled     bool     `json:"enabled"`
 	Health      string   `json:"health"`
+	AccessType  string   `json:"accessType"`
 }
 
 func newAppAddCmd() *cobra.Command {
-	var name, upstreamURL, slug, description, icon, tags, filePath string
+	var name, upstreamURL, slug, description, icon, tags, filePath, accessType string
 
 	cmd := &cobra.Command{
 		Use:   "add",
@@ -67,6 +68,7 @@ func newAppAddCmd() *cobra.Command {
 					fmt.Fprintln(os.Stderr, err.Error())
 					os.Exit(1)
 				}
+				accessType = def.AccessType
 				body := map[string]interface{}{
 					"name":        def.Name,
 					"slug":        def.Slug,
@@ -75,6 +77,7 @@ func newAppAddCmd() *cobra.Command {
 					"icon":        def.Icon,
 					"tags":        def.Tags,
 					"enabled":     true,
+					"accessType":  accessType,
 				}
 				var result appRecord
 				if err := newClient().Post("/api/v1/apps", body, &result); err != nil {
@@ -103,6 +106,10 @@ func newAppAddCmd() *cobra.Command {
 				fmt.Fprintln(os.Stderr, "URL must start with http:// or https://")
 				os.Exit(2)
 			}
+			if accessType != "direct" && accessType != "proxy" {
+				fmt.Fprintln(os.Stderr, "--access-type must be one of: direct, proxy")
+				os.Exit(2)
+			}
 
 			var tagList []string
 			if tags != "" {
@@ -122,6 +129,7 @@ func newAppAddCmd() *cobra.Command {
 				"icon":        icon,
 				"tags":        tagList,
 				"enabled":     true,
+				"accessType":  accessType,
 			}
 
 			var result appRecord
@@ -152,6 +160,7 @@ func newAppAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "App description")
 	cmd.Flags().StringVar(&icon, "icon", "", "App icon URL or emoji")
 	cmd.Flags().StringVar(&tags, "tags", "", "Comma-separated tags")
+	cmd.Flags().StringVar(&accessType, "access-type", "proxy", "Access type: direct (new tab) or proxy (iFrame)")
 
 	return cmd
 }
@@ -201,6 +210,7 @@ upstreamUrl: ""
 description: ""
 icon: ""
 tags: []
+accessType: "proxy"  # "direct" (open in new tab) | "proxy" (iFrame via oasis gateway)
 `, name, slug)
 
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -368,13 +378,54 @@ func newAppDisableCmd() *cobra.Command {
 }
 
 func newAppUpdateCmd() *cobra.Command {
-	var name, upstreamURL, description, icon, tags string
+	var name, upstreamURL, description, icon, tags, accessType, filePath string
 
 	cmd := &cobra.Command{
 		Use:   "update <slug>",
 		Short: "Update app fields",
-		Args:  cobra.ExactArgs(1),
+		Args:  cobra.RangeArgs(0, 1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// File-based update.
+			if filePath != "" {
+				def, err := cliyaml.ParseAppFile(filePath)
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err.Error())
+					os.Exit(1)
+				}
+				if len(args) == 0 && def.Slug == "" {
+					fmt.Fprintln(os.Stderr, "slug is required (provide as argument or in YAML file)")
+					os.Exit(2)
+				}
+				targetSlug := def.Slug
+				if len(args) > 0 {
+					targetSlug = args[0]
+				}
+				body := map[string]interface{}{
+					"name":        def.Name,
+					"upstreamURL": def.UpstreamURL,
+					"description": def.Description,
+					"icon":        def.Icon,
+					"tags":        def.Tags,
+					"accessType":  def.AccessType,
+				}
+				if err := newClient().Patch("/api/v1/apps/"+targetSlug, body, nil); err != nil {
+					if apiErr, ok := err.(*client.APIError); ok && apiErr.HTTPStatus == 404 {
+						fmt.Fprintf(os.Stderr, "No app found with slug %q.\n", targetSlug)
+						os.Exit(1)
+					}
+					return err
+				}
+				if !quiet {
+					fmt.Fprintf(cmd.OutOrStdout(), "App %q updated.\n", targetSlug)
+				}
+				return nil
+			}
+
+			// Flag-based update requires the slug argument.
+			if len(args) == 0 {
+				fmt.Fprintln(os.Stderr, "slug argument is required when not using -f")
+				os.Exit(2)
+			}
 			slug := args[0]
 
 			body := make(map[string]interface{})
@@ -400,6 +451,13 @@ func newAppUpdateCmd() *cobra.Command {
 				}
 				body["tags"] = tagList
 			}
+			if cmd.Flags().Changed("access-type") {
+				if accessType != "direct" && accessType != "proxy" {
+					fmt.Fprintln(os.Stderr, "--access-type must be one of: direct, proxy")
+					os.Exit(2)
+				}
+				body["accessType"] = accessType
+			}
 
 			if len(body) == 0 {
 				fmt.Fprintln(os.Stderr, "Nothing to update — provide at least one flag.")
@@ -421,11 +479,13 @@ func newAppUpdateCmd() *cobra.Command {
 		},
 	}
 
+	cmd.Flags().StringVarP(&filePath, "file", "f", "", "YAML definition file")
 	cmd.Flags().StringVar(&name, "name", "", "New display name")
 	cmd.Flags().StringVar(&upstreamURL, "url", "", "New upstream URL")
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&icon, "icon", "", "New icon URL or emoji")
 	cmd.Flags().StringVar(&tags, "tags", "", "New comma-separated tags")
+	cmd.Flags().StringVar(&accessType, "access-type", "", "Access type: direct (new tab) or proxy (iFrame)")
 
 	return cmd
 }

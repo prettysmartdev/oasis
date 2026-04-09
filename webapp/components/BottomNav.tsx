@@ -39,6 +39,13 @@ function StatusDot({ status }: { status: Status | null }) {
   )
 }
 
+interface BottomNavProps {
+  /** True when a proxy app iFrame is currently displayed. */
+  appOpen?: boolean
+  /** Called to close the iFrame and return to the homescreen. */
+  onCloseApp?: () => void
+}
+
 /**
  * Floating bottom navigation bar with two controls:
  *
@@ -46,12 +53,16 @@ function StatusDot({ status }: { status: Status | null }) {
  *   placeholder for a future chatbot feature — submission does nothing yet.
  * - **Settings button** (bottom-right): opens a dialog showing controller
  *   health (hostname, Tailscale IP, NGINX status, app count, version).
+ *   Hidden when a proxy app is open.
+ *
+ * When `appOpen` is true and the chat input is expanded, a home button slides
+ * in from the right to allow closing the iFrame.
  *
  * The settings button carries a status dot derived from `GET /api/v1/status`,
  * polled every 30 seconds. Gray = no data, green = fully healthy,
  * amber = degraded, red = error/disconnected.
  */
-export default function BottomNav() {
+export default function BottomNav({ appOpen, onCloseApp }: BottomNavProps) {
   const prefersReducedMotion = useReducedMotion()
   const [status, setStatus] = useState<Status | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -115,18 +126,41 @@ export default function BottomNav() {
               }}
             />
           </div>
+
         </div>
 
-        {/* Settings button */}
-        <div className="pointer-events-auto relative">
-          <button
-            onClick={() => setSettingsOpen(true)}
-            aria-label="Open settings"
-            className="w-12 h-12 rounded-full bg-slate-800/90 border border-slate-700 flex items-center justify-center text-2xl shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+        {/* Right side: settings button (hidden when proxy app open) or home button */}
+        <div className="pointer-events-auto relative flex items-end">
+          {/* Settings button — hidden when a proxy app is open */}
+          {!appOpen && (
+            <>
+              <button
+                onClick={() => setSettingsOpen(true)}
+                aria-label="Open settings"
+                className="w-12 h-12 rounded-full bg-slate-800/90 border border-slate-700 flex items-center justify-center text-2xl shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:ring-offset-transparent"
+              >
+                ⚙️
+              </button>
+              <StatusDot status={status} />
+            </>
+          )}
+
+          {/* Home button — slides in from the right when chat is open and a proxy app is displayed */}
+          <div
+            className="overflow-hidden transition-all duration-300"
+            style={{
+              width: (chatOpen && appOpen) ? '48px' : '0px',
+              opacity: (chatOpen && appOpen) ? 1 : 0,
+            }}
           >
-            ⚙️
-          </button>
-          <StatusDot status={status} />
+            <button
+              onClick={onCloseApp}
+              aria-label="Return to home screen"
+              className="w-12 h-12 rounded-full bg-slate-800/90 border border-slate-700 flex items-center justify-center text-2xl shadow-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+            >
+              🏠
+            </button>
+          </div>
         </div>
       </nav>
 

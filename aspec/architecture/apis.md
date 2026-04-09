@@ -23,7 +23,9 @@ Versioning:
 - The CLI sends an X-Oasis-CLI-Version header on every request; the controller logs a warning if versions are incompatible
 
 Objects:
-- App: { id (uuid), name (string), slug (string, URL-safe), upstreamURL (string), displayName (string), description (string), icon (string, URL or emoji), tags ([]string), enabled (bool), health ("healthy"|"unreachable"|"unknown"), createdAt (RFC3339), updatedAt (RFC3339) }
+- App: { id (uuid), name (string), slug (string, URL-safe), upstreamURL (string), displayName (string), description (string), icon (string, URL or emoji), tags ([]string), enabled (bool), health ("healthy"|"unreachable"|"unknown"), accessType ("direct"|"proxy"), createdAt (RFC3339), updatedAt (RFC3339) }
+  - `accessType: "direct"` — tapping the icon opens the upstream URL in a new browser tab (no NGINX proxy route is created)
+  - `accessType: "proxy"` — NGINX reverse-proxies `/apps/<slug>/` to the upstream; tapping the icon opens a full-screen iFrame inside the oasis dashboard. `X-Frame-Options` and `Content-Security-Policy` response headers are stripped by NGINX so the browser can embed the upstream. **Known limitation:** upstream apps that hard-code the root path `/` in asset references may break when served under a path prefix (e.g. `/apps/my-app/`).
   - Note: the webapp uses the presence of `"agent"` in `tags` to decide which dashboard page an item appears on — items tagged `"agent"` appear on the Agents page, all others on the Apps page.
 - Agent: { id (uuid), name (string), slug (string, URL-safe), description (string), icon (string, URL or emoji), prompt (string), trigger ("tap"|"schedule"|"webhook"), schedule (string, cron expression — present only when trigger="schedule"), outputFmt ("markdown"|"html"|"plaintext"), enabled (bool), createdAt (RFC3339), updatedAt (RFC3339) }
 - AgentRun: { id (uuid), agentId (uuid), triggerSrc ("tap"|"schedule"|"webhook"), status ("running"|"done"|"error"), output (string), startedAt (RFC3339), finishedAt (RFC3339, omitted if still running) }
@@ -77,6 +79,7 @@ Both management and tsnet API endpoints (read + webhook):
 - GET    /api/v1/agents/runs/:runId           — get a specific AgentRun by id; 404 if not found
 
 Validation rules:
+- accessType must be one of: direct, proxy; defaults to "proxy" when omitted; error code INVALID_ACCESS_TYPE (400)
 - trigger must be one of: tap, schedule, webhook; error code INVALID_TRIGGER (400)
 - schedule is required when trigger=schedule; must be a valid 5-field cron expression; error code INVALID_SCHEDULE (400)
 - outputFmt must be one of: markdown, html, plaintext; defaults to markdown; error code INVALID_OUTPUT_FMT (400)
@@ -92,6 +95,9 @@ upstreamUrl: <string, required, HTTP/HTTPS URL>
 description: <string, optional>
 icon:        <string, optional, emoji or URL>
 tags:        <[]string, optional>
+accessType:  <string, optional — "direct"|"proxy"; default "proxy">
+             # "direct" opens the upstream URL in a new tab (no NGINX route created)
+             # "proxy" reverse-proxies /apps/<slug>/ and opens app in an iFrame
 ```
 
 Agent YAML fields:

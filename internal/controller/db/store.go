@@ -28,8 +28,12 @@ type App struct {
 	Tags        []string
 	Enabled     bool
 	Health      string
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// AccessType controls how the dashboard opens the app: "direct" opens the
+	// upstream URL in a new browser tab; "proxy" reverse-proxies the upstream
+	// through NGINX at /apps/<slug>/ and opens it in a full-screen iFrame.
+	AccessType string
+	CreatedAt  time.Time
+	UpdatedAt  time.Time
 }
 
 // AppPatch carries optional fields for a partial App update.
@@ -42,6 +46,8 @@ type AppPatch struct {
 	Icon        *string
 	Tags        *[]string
 	Enabled     *bool
+	// AccessType, when non-nil, updates the access mode. Valid values: "direct", "proxy".
+	AccessType *string
 }
 
 // Settings holds the single-row global controller settings.
@@ -101,7 +107,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version >= 2 {
+	if version >= 3 {
 		return nil
 	}
 
@@ -137,8 +143,9 @@ INSERT OR IGNORE INTO settings (id) VALUES (1);
 		}
 	}
 
-	// Migration 2: agents tables.
-	_, err := s.db.ExecContext(ctx, `
+	if version <= 1 {
+		// Migration 2: agents tables.
+		_, err := s.db.ExecContext(ctx, `
 CREATE TABLE IF NOT EXISTS agents (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL,
@@ -163,8 +170,16 @@ CREATE TABLE IF NOT EXISTS agent_runs (
     started_at  TEXT NOT NULL,
     finished_at TEXT
 );
+`)
+		if err != nil {
+			return err
+		}
+	}
 
-PRAGMA user_version = 2;
+	// Migration 3: add access_type to apps.
+	_, err := s.db.ExecContext(ctx, `
+ALTER TABLE apps ADD COLUMN access_type TEXT NOT NULL DEFAULT 'direct';
+PRAGMA user_version = 3;
 `)
 	return err
 }
@@ -176,12 +191,12 @@ func (s *Store) CreateApp(ctx context.Context, app App) error {
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `
-INSERT INTO apps (id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO apps (id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, access_type, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		app.ID, app.Name, app.Slug, app.UpstreamURL,
 		app.DisplayName, app.Description, app.Icon,
 		string(tags),
-		boolToInt(app.Enabled), app.Health,
+		boolToInt(app.Enabled), app.Health, app.AccessType,
 		app.CreatedAt.UTC().Format(time.RFC3339),
 		app.UpdatedAt.UTC().Format(time.RFC3339),
 	)
@@ -191,7 +206,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 // GetApp retrieves an app by slug. Returns ErrNotFound if it does not exist.
 func (s *Store) GetApp(ctx context.Context, slug string) (App, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, created_at, updated_at
+		`SELECT id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, access_type, created_at, updated_at
 		 FROM apps WHERE slug = ?`, slug)
 	return scanApp(row)
 }
@@ -199,7 +214,7 @@ func (s *Store) GetApp(ctx context.Context, slug string) (App, error) {
 // ListApps returns all apps ordered by creation time (oldest first).
 func (s *Store) ListApps(ctx context.Context) ([]App, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, created_at, updated_at
+		`SELECT id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, access_type, created_at, updated_at
 		 FROM apps ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -228,7 +243,7 @@ func (s *Store) UpdateApp(ctx context.Context, slug string, patch AppPatch) (App
 
 	var app App
 	row := tx.QueryRowContext(ctx,
-		`SELECT id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, created_at, updated_at
+		`SELECT id, name, slug, upstream_url, display_name, description, icon, tags, enabled, health, access_type, created_at, updated_at
 		 FROM apps WHERE slug = ?`, slug)
 	app, err = scanApp(row)
 	if err != nil {
@@ -256,6 +271,9 @@ func (s *Store) UpdateApp(ctx context.Context, slug string, patch AppPatch) (App
 	if patch.Enabled != nil {
 		app.Enabled = *patch.Enabled
 	}
+	if patch.AccessType != nil {
+		app.AccessType = *patch.AccessType
+	}
 
 	app.UpdatedAt = time.Now().UTC()
 	tags, err := json.Marshal(app.Tags)
@@ -264,10 +282,10 @@ func (s *Store) UpdateApp(ctx context.Context, slug string, patch AppPatch) (App
 	}
 
 	_, err = tx.ExecContext(ctx, `
-UPDATE apps SET name=?, upstream_url=?, display_name=?, description=?, icon=?, tags=?, enabled=?, updated_at=?
+UPDATE apps SET name=?, upstream_url=?, display_name=?, description=?, icon=?, tags=?, enabled=?, access_type=?, updated_at=?
 WHERE slug=?`,
 		app.Name, app.UpstreamURL, app.DisplayName, app.Description,
-		app.Icon, string(tags), boolToInt(app.Enabled),
+		app.Icon, string(tags), boolToInt(app.Enabled), app.AccessType,
 		app.UpdatedAt.Format(time.RFC3339), slug,
 	)
 	if err != nil {
@@ -367,7 +385,7 @@ func scanApp(s scanner) (App, error) {
 	err := s.Scan(
 		&app.ID, &app.Name, &app.Slug, &app.UpstreamURL,
 		&app.DisplayName, &app.Description, &app.Icon,
-		&tagsJSON, &enabledI, &app.Health,
+		&tagsJSON, &enabledI, &app.Health, &app.AccessType,
 		&createdS, &updatedS,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

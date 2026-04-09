@@ -17,6 +17,10 @@ type AppDefinition struct {
 	Description string   `yaml:"description"`
 	Icon        string   `yaml:"icon"`
 	Tags        []string `yaml:"tags"`
+	// AccessType is "direct" (open upstream URL in a new tab) or "proxy"
+	// (reverse-proxy through NGINX and open in an iFrame). Defaults to "proxy"
+	// when omitted.
+	AccessType string `yaml:"accessType"`
 }
 
 // AgentDefinition represents an agent parsed from a YAML definition file.
@@ -55,6 +59,11 @@ func ParseAppFile(path string) (*AppDefinition, error) {
 	}
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required fields: %s", strings.Join(missing, ", "))
+	}
+	if def.AccessType == "" {
+		def.AccessType = "proxy"
+	} else if def.AccessType != "direct" && def.AccessType != "proxy" {
+		return nil, fmt.Errorf("accessType must be one of: direct, proxy (got %q)", def.AccessType)
 	}
 	return &def, nil
 }

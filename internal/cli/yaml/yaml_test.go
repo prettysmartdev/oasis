@@ -297,3 +297,60 @@ outputFmt: "html"
 		t.Errorf("OutputFmt: got %q, want %q", def.OutputFmt, "html")
 	}
 }
+
+// --- accessType field tests for ParseAppFile ----------------------------------
+
+// TestParseAppFileAccessTypeProxy verifies that an explicit accessType:"proxy" is preserved.
+func TestParseAppFileAccessTypeProxy(t *testing.T) {
+	content := `
+name: "Proxy App"
+slug: "proxy-app"
+upstreamUrl: "http://localhost:3000"
+accessType: "proxy"
+`
+	path := writeTemp(t, content)
+	def, err := ParseAppFile(path)
+	if err != nil {
+		t.Fatalf("ParseAppFile error: %v", err)
+	}
+	if def.AccessType != "proxy" {
+		t.Errorf("AccessType: got %q, want %q", def.AccessType, "proxy")
+	}
+}
+
+// TestParseAppFileAccessTypeInvalid verifies that an unrecognised accessType value
+// returns an error that mentions "accessType".
+func TestParseAppFileAccessTypeInvalid(t *testing.T) {
+	content := `
+name: "Bad App"
+slug: "bad-app"
+upstreamUrl: "http://localhost:3000"
+accessType: "invalid"
+`
+	path := writeTemp(t, content)
+	_, err := ParseAppFile(path)
+	if err == nil {
+		t.Fatal("expected error for invalid accessType, got nil")
+	}
+	if !strings.Contains(err.Error(), "accessType") {
+		t.Errorf("error should mention 'accessType': %v", err)
+	}
+}
+
+// TestParseAppFileAccessTypeOmittedDefaultsToProxy verifies that omitting the accessType
+// field causes ParseAppFile to default it to "proxy".
+func TestParseAppFileAccessTypeOmittedDefaultsToProxy(t *testing.T) {
+	content := `
+name: "No Access Type App"
+slug: "no-access-type-app"
+upstreamUrl: "http://localhost:3000"
+`
+	path := writeTemp(t, content)
+	def, err := ParseAppFile(path)
+	if err != nil {
+		t.Fatalf("ParseAppFile error: %v", err)
+	}
+	if def.AccessType != "proxy" {
+		t.Errorf("AccessType default: got %q, want %q", def.AccessType, "proxy")
+	}
+}

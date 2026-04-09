@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, screen, fireEvent, waitFor } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react'
 import BottomNav from '@/components/BottomNav'
 
 // Mock the API module so fetchStatus doesn't make real HTTP calls
@@ -70,5 +70,49 @@ describe('BottomNav', () => {
     })
     // Status null → fallback message shown
     expect(screen.getByText(/Unable to reach the OaSis controller/i)).toBeInTheDocument()
+  })
+
+  it('home button is present in the DOM and visible when appOpen=true and chatOpen=true', async () => {
+    render(<BottomNav appOpen={true} onCloseApp={jest.fn()} />)
+    // Flush the fetchStatus promise so React updates don't escape act()
+    await act(async () => {})
+    // Open chat to trigger chatOpen=true
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/i }))
+    const homeBtn = screen.getByRole('button', { name: /Return to home screen/i })
+    expect(homeBtn).toBeInTheDocument()
+    // The wrapper div should have opacity 1
+    const wrapper = homeBtn.parentElement as HTMLElement
+    expect(wrapper.style.opacity).toBe('1')
+    expect(wrapper.style.width).toBe('48px')
+  })
+
+  it('home button wrapper is hidden (opacity 0) when appOpen=false even when chatOpen=true', async () => {
+    render(<BottomNav appOpen={false} onCloseApp={jest.fn()} />)
+    // Flush the fetchStatus promise so React updates don't escape act()
+    await act(async () => {})
+    // Open chat to trigger chatOpen=true
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/i }))
+    const homeBtn = screen.getByRole('button', { name: /Return to home screen/i })
+    const wrapper = homeBtn.parentElement as HTMLElement
+    expect(wrapper.style.opacity).toBe('0')
+    expect(wrapper.style.width).toBe('0px')
+  })
+
+  it('home button click calls onCloseApp', async () => {
+    const mockOnCloseApp = jest.fn()
+    render(<BottomNav appOpen={true} onCloseApp={mockOnCloseApp} />)
+    // Flush the fetchStatus promise so React updates don't escape act()
+    await act(async () => {})
+    // Open chat so the home button becomes visible
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/i }))
+    const homeBtn = screen.getByRole('button', { name: /Return to home screen/i })
+    fireEvent.click(homeBtn)
+    expect(mockOnCloseApp).toHaveBeenCalledTimes(1)
+  })
+
+  it('settings button is not rendered when appOpen=true', async () => {
+    render(<BottomNav appOpen={true} />)
+    await act(async () => {})
+    expect(screen.queryByRole('button', { name: /Open settings/i })).not.toBeInTheDocument()
   })
 })

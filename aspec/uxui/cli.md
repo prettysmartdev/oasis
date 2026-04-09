@@ -16,14 +16,14 @@ Top level command groups:
 - oasis update [--version v1.2.3]         — pull the specified (or latest) image tag and restart the container, preserving volumes
 - oasis logs [--follow] [--lines N]       — stream or print controller and NGINX logs from the container
 - oasis app new <name>                    — write an app YAML template to ./oasis-app-<name>.yaml; edit the file then use `oasis app add -f` to register
-- oasis app add --name <n> --url <u> --slug <s> [--description <d>] [--icon <emoji|url>] [--tags <t,...>]
+- oasis app add --name <n> --url <u> --slug <s> [--description <d>] [--icon <emoji|url>] [--tags <t,...>] [--access-type direct|proxy]
 - oasis app add -f/--file <path>          — register an app from a YAML definition file; if -f is provided alongside other flags, flags are ignored with a warning
 - oasis app list [--json]                 — list all registered apps with name, slug, upstream URL, status, and health
 - oasis app show <slug> [--json]          — show full details for a single app
 - oasis app remove <slug>                 — unregister and remove an app
 - oasis app enable <slug>                 — enable a disabled app (adds it back to the dashboard and NGINX routes)
 - oasis app disable <slug>               — disable an app (hides it from the dashboard and removes its NGINX route, but keeps the record)
-- oasis app update <slug> [--name] [--url] [--description] [--icon] [--tags] — update app fields
+- oasis app update <slug> [--name] [--url] [--description] [--icon] [--tags] [--access-type direct|proxy] — update app fields
 - oasis agent new <name>                  — write an agent YAML template to ./oasis-agent-<name>.yaml; edit the file then use `oasis agent add -f` to register
 - oasis agent add [--name <n>] [--slug <s>] [--prompt <p>] [--trigger tap|schedule|webhook] [--schedule <cron>] [--output-fmt markdown|html|plaintext] [--description <d>] [--icon <emoji|url>] [-f/--file <path>]
 - oasis agent list [--json]               — list all registered agents with name, slug, trigger, enabled state

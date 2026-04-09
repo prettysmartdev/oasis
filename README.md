@@ -13,7 +13,7 @@
 
 Install the dashboard as a **Progressive Web App** on any phone or tablet on your tailnet and it launches in full-screen standalone mode, just like a native app. See [Installing OaSis as an App](docs/pwa.md) for iOS and Android instructions.
 
-> **Status:** This repository is under active development. The CLI, controller scaffold, and initial webapp dashboard are in place; full end-to-end wiring and browser integration tests are planned in upcoming work items.
+> **Status:** This repository is under active development. The CLI, controller, webapp dashboard, and application proxying (iFrame + NGINX gateway) are in place; browser integration tests are planned in upcoming work items.
 
 ---
 
@@ -92,6 +92,8 @@ oasis init
 #   → prints your dashboard URL when ready
 
 # 3. Register your first app
+# Defaults to --access-type proxy: the app opens in a full-screen iFrame inside the oasis dashboard.
+# Use --access-type direct to open it in a new browser tab instead.
 oasis app add --name "My App" --url http://localhost:3000 --slug myapp
 
 # 4. Check status
@@ -185,7 +187,7 @@ internal/
     table/            # Output formatting: tables, key/value lists, spinner
 webapp/               # Next.js App Router (static export)
   app/                # Root page, layout, and global styles
-  components/         # AppIcon, BottomNav, EmptyState, HomescreenLayout, TimeOfDayBackground + shadcn/ui primitives
+  components/         # AppIcon, AppProxyView, BottomNav, EmptyState, HomescreenLayout, TimeOfDayBackground + shadcn/ui primitives
   lib/                # Typed API fetch helpers (api.ts) and shared utilities
   __tests__/          # Jest unit tests
 .github/workflows/

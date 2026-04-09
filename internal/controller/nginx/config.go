@@ -107,24 +107,54 @@ func (c *Configurator) Apply(_ context.Context, apps []db.App) error {
 	return nil
 }
 
+// proxyHeaders returns the NGINX directives to forward standard proxy request headers
+// and strip response headers that would prevent iFrame embedding in the oasis dashboard.
+//
+// X-Frame-Options and Content-Security-Policy are removed from upstream responses so
+// the browser will not refuse to embed the app in the dashboard iFrame. Note: stripping
+// Content-Security-Policy weakens the upstream app's security policy in the browser —
+// this is an explicit trade-off for the iFrame proxy experience.
+func proxyHeaders() []crossplane.Directive {
+	return []crossplane.Directive{
+		{Directive: "proxy_set_header", Args: []string{"Host", "$host"}},
+		{Directive: "proxy_set_header", Args: []string{"X-Real-IP", "$remote_addr"}},
+		{Directive: "proxy_set_header", Args: []string{"X-Forwarded-For", "$proxy_add_x_forwarded_for"}},
+		{Directive: "proxy_set_header", Args: []string{"X-Forwarded-Proto", "$scheme"}},
+		{Directive: "proxy_hide_header", Args: []string{"X-Frame-Options"}},
+		{Directive: "proxy_hide_header", Args: []string{"Content-Security-Policy"}},
+	}
+}
+
 // buildConfig constructs the full NGINX config string using the go-crossplane AST.
 func buildConfig(apps []db.App) (string, error) {
-	// Build location blocks for enabled apps.
+	// Build location blocks for enabled apps with proxy access type.
+	// Direct apps are opened in a new browser tab by the dashboard and do not
+	// require an NGINX route — skipping their location block is intentional and
+	// does not affect the health-check loop (which probes upstreamURL directly).
+	//
+	// Known limitation: upstream apps that hard-code the root "/" path in asset
+	// references (e.g. <script src="/static/main.js">) will break when served
+	// under the path prefix /apps/<slug>/. Those assets will be requested as
+	// /static/main.js instead of /apps/<slug>/static/main.js. This is an
+	// inherent limitation of path-prefix proxying; no sub_filter workaround is
+	// applied here.
 	var locations []crossplane.Directive
 	for _, app := range apps {
-		if !app.Enabled {
+		if !app.Enabled || app.AccessType != "proxy" {
 			continue
 		}
 		upstream := app.UpstreamURL
 		if !strings.HasSuffix(upstream, "/") {
 			upstream += "/"
 		}
+		block := []crossplane.Directive{
+			{Directive: "proxy_pass", Args: []string{upstream}},
+		}
+		block = append(block, proxyHeaders()...)
 		loc := crossplane.Directive{
 			Directive: "location",
 			Args:      []string{"/apps/" + app.Slug + "/"},
-			Block: &[]crossplane.Directive{
-				{Directive: "proxy_pass", Args: []string{upstream}},
-			},
+			Block:     &block,
 		}
 		locations = append(locations, loc)
 	}
