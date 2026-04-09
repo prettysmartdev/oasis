@@ -3,5 +3,6 @@ name: "todoapp"
 slug: "todoapp"
 upstreamUrl: "http://host.docker.internal:3000"
 description: "A todo app for oasis"
+accessType: "proxy"
 icon: "✅"
 tags: []

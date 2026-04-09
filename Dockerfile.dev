@@ -22,4 +22,11 @@ RUN curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/i
 RUN curl -fsSL https://claude.ai/install.sh | bash \
     && cp /root/.local/bin/claude /usr/local/bin/claude
 
+# Create non-root user and set up workspace
+RUN useradd -m -s /bin/bash amux \
+    && mkdir -p /workspace \
+    && chown amux:amux /workspace
+
+USER amux
+
 WORKDIR /workspace
