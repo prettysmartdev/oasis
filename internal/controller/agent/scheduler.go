@@ -2,7 +2,10 @@ package agent
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -14,12 +17,19 @@ import (
 
 // Scheduler polls the DB every minute and fires runs for schedule-triggered agents.
 type Scheduler struct {
-	store *db.Store
+	store   *db.Store
+	harness AgentHarness
+	runsDir string
 }
 
 // NewScheduler creates a new Scheduler backed by store.
-func NewScheduler(store *db.Store) *Scheduler {
-	return &Scheduler{store: store}
+// harness is the AgentHarness to use for executing agents; if nil, StubHarness is used.
+// runsDir is the base directory for agent run work directories.
+func NewScheduler(store *db.Store, harness AgentHarness, runsDir string) *Scheduler {
+	if harness == nil {
+		harness = StubHarness{}
+	}
+	return &Scheduler{store: store, harness: harness, runsDir: runsDir}
 }
 
 // Start runs the scheduler loop until ctx is cancelled.
@@ -74,14 +84,8 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time, wg *sync.WaitGroup)
 		}
 
 		// Find the most recent scheduled time at or before now.
-		// sched.Next returns the first time strictly after the argument, so we
-		// start from (now - 2 min) and advance until the next candidate would
-		// overshoot now.  This correctly handles sub-hourly schedules like
-		// "* * * * *" where a naïve single Next call returns the previous
-		// window instead of the current one.
 		prev := sched.Next(now.Add(-2 * time.Minute))
 		if prev.After(now) {
-			// No scheduled time in the past window.
 			continue
 		}
 		for {
@@ -95,7 +99,6 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time, wg *sync.WaitGroup)
 		// Check if we already have a run that started within this window.
 		lastRun, err := s.store.GetLatestAgentRun(ctx, a.ID)
 		if err == nil && lastRun != nil {
-			// If the last run started at or after the most recent scheduled time, skip.
 			if !lastRun.StartedAt.Before(prev) {
 				continue
 			}
@@ -103,6 +106,14 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time, wg *sync.WaitGroup)
 
 		// Fire the agent in a goroutine.
 		runID := uuid.New().String()
+
+		// Create work directory before the DB record.
+		workDir := filepath.Join(s.runsDir, runID)
+		if mkErr := os.MkdirAll(workDir, 0o750); mkErr != nil {
+			slog.Error("agent scheduler: failed to create work dir", "runId", runID, "err", mkErr)
+			continue
+		}
+
 		run := db.AgentRun{
 			ID:         runID,
 			AgentID:    a.ID,
@@ -116,20 +127,45 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time, wg *sync.WaitGroup)
 		}
 
 		agent := a // capture loop var
+		harness := s.harness
+		store := s.store
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			output, runErr := Run(ctx, agent)
-			status := "done"
-			if runErr != nil {
-				status = "error"
-				output = runErr.Error()
-				slog.Error("agent scheduler: run failed", "agent", agent.Slug, "runId", runID, "err", runErr)
-			}
+			output, status := ExecuteRun(ctx, harness, agent, workDir)
 			finishedAt := time.Now().UTC()
-			if updateErr := s.store.UpdateAgentRun(ctx, runID, status, output, finishedAt); updateErr != nil {
+			if updateErr := store.UpdateAgentRun(ctx, runID, status, output, finishedAt); updateErr != nil {
 				slog.Error("agent scheduler: failed to update run", "runId", runID, "err", updateErr)
+			}
+			if status == "error" {
+				slog.Error("agent scheduler: run failed", "agent", agent.Slug, "runId", runID)
 			}
 		}()
 	}
+}
+
+// ExecuteRun calls harness.Execute and reads the output file or error.txt.
+// Returns (output, status).
+func ExecuteRun(ctx context.Context, harness AgentHarness, a db.Agent, workDir string) (string, string) {
+	err := harness.Execute(ctx, a, workDir)
+	if err != nil {
+		// Detect context cancellation (run timeout).
+		if ctx.Err() != nil {
+			return "agent run timed out", "error"
+		}
+		// Try to read error.txt written by ClaudeHarness.
+		errTxt := filepath.Join(workDir, "error.txt")
+		if data, readErr := os.ReadFile(errTxt); readErr == nil && len(data) > 0 {
+			return string(data), "error"
+		}
+		return fmt.Sprintf("agent execution failed: %v", err), "error"
+	}
+
+	// Read the output file.
+	outFile := filepath.Join(workDir, OutputFilename(a.OutputFmt))
+	data, readErr := os.ReadFile(outFile)
+	if readErr != nil || len(data) == 0 {
+		return "agent produced no output file", "error"
+	}
+	return string(data), "done"
 }

@@ -75,6 +75,14 @@ RUN S6_ARCH=$([ "$TARGETARCH" = "arm64" ] && echo "aarch64" || echo "x86_64") \
     && tar -C / -Jxpf /tmp/s6-arch.tar.xz \
     && rm /tmp/*.tar.xz
 
+# Install Node.js (LTS) and the claude CLI via npm.
+# We use the NodeSource setup script to get a recent LTS release.
+ARG NODE_VERSION=20
+RUN curl -fsSL https://deb.nodesource.com/setup_${NODE_VERSION}.x | bash - \
+    && apt-get install -y --no-install-recommends nodejs \
+    && npm install -g @anthropic-ai/claude-code \
+    && rm -rf /var/lib/apt/lists/*
+
 # Copy Go binaries from builder
 COPY --from=go-builder /build/bin/controller /usr/local/bin/controller
 COPY --from=go-builder /build/bin/oasis      /usr/local/bin/oasis
@@ -95,7 +103,7 @@ RUN chmod +x /etc/s6-overlay/s6-rc.d/controller/run \
 # Create non-root user (uid 1000)
 RUN groupadd -g 1000 oasis \
     && useradd -u 1000 -g oasis -s /sbin/nologin -d /data oasis \
-    && mkdir -p /data/db /data/ts-state \
+    && mkdir -p /data/db /data/ts-state /data/agent-runs \
     && chown -R oasis:oasis /data /srv/webapp
 
 # Allow the oasis user to write NGINX config and use NGINX temp/log dirs

@@ -331,6 +331,114 @@ func TestAppAddFileMissingRequiredFields(t *testing.T) {
 	_ = apiCalled // not tested here since we can't run the command without os.Exit
 }
 
+// TestAgentAddModelFlag verifies that `oasis agent add --model` sends the model value.
+func TestAgentAddModelFlag(t *testing.T) {
+	var gotBody map[string]any
+	cfgPath := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/agents" && r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			resp := map[string]any{
+				"id": "agent-id", "name": gotBody["name"], "slug": gotBody["slug"],
+				"trigger": gotBody["trigger"], "outputFmt": gotBody["outputFmt"],
+				"enabled": true, "prompt": gotBody["prompt"], "model": gotBody["model"],
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	_, _, err := runCLI(t, "--config", cfgPath, "agent", "add",
+		"--name", "Test", "--slug", "test", "--prompt", "p", "--trigger", "tap",
+		"--model", "claude-opus-4-6")
+	if err != nil {
+		t.Fatalf("agent add error: %v", err)
+	}
+	if gotBody == nil {
+		t.Fatal("no POST request was made to the API")
+	}
+	if gotBody["model"] != "claude-opus-4-6" {
+		t.Errorf("model: got %v, want %q", gotBody["model"], "claude-opus-4-6")
+	}
+}
+
+// TestAgentAddNoModelFlag verifies that passing --model="" sends an empty string for model.
+// The global command reuses subcommand flag variables across test calls, so we explicitly
+// set --model="" to ensure the model field is always empty for this test.
+func TestAgentAddNoModelFlag(t *testing.T) {
+	var gotBody map[string]any
+	cfgPath := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/agents" && r.Method == http.MethodPost {
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusCreated)
+			resp := map[string]any{
+				"id": "agent-id", "name": gotBody["name"], "slug": gotBody["slug"],
+				"trigger": gotBody["trigger"], "outputFmt": gotBody["outputFmt"],
+				"enabled": true, "prompt": gotBody["prompt"], "model": gotBody["model"],
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	_, _, err := runCLI(t, "--config", cfgPath, "agent", "add",
+		"--name", "Test", "--slug", "test", "--prompt", "p", "--trigger", "tap",
+		"--model", "")
+	if err != nil {
+		t.Fatalf("agent add error: %v", err)
+	}
+	if gotBody == nil {
+		t.Fatal("no POST request was made to the API")
+	}
+	if gotBody["model"] != "" {
+		t.Errorf("model: got %v, want empty string", gotBody["model"])
+	}
+}
+
+// TestAgentUpdateModelFlag verifies that `oasis agent update --model` sends the model field.
+func TestAgentUpdateModelFlag(t *testing.T) {
+	var gotBody map[string]any
+	cfgPath := setupTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/v1/agents/test-agent" && r.Method == http.MethodPatch {
+			if err := json.NewDecoder(r.Body).Decode(&gotBody); err != nil {
+				http.Error(w, err.Error(), 400)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			resp := map[string]any{
+				"id": "agent-id", "name": "Test Agent", "slug": "test-agent",
+				"trigger": "tap", "outputFmt": "markdown",
+				"enabled": true, "prompt": "p", "model": gotBody["model"],
+			}
+			json.NewEncoder(w).Encode(resp) //nolint:errcheck
+			return
+		}
+		http.NotFound(w, r)
+	})
+
+	_, _, err := runCLI(t, "--config", cfgPath, "agent", "update", "test-agent",
+		"--model", "claude-haiku-4-5-20251001")
+	if err != nil {
+		t.Fatalf("agent update error: %v", err)
+	}
+	if gotBody == nil {
+		t.Fatal("no PATCH request was made to the API")
+	}
+	if gotBody["model"] != "claude-haiku-4-5-20251001" {
+		t.Errorf("model: got %v, want %q", gotBody["model"], "claude-haiku-4-5-20251001")
+	}
+}
+
 // TestAgentAddFileCallsAPI verifies `oasis agent add -f <yaml>` calls the correct POST endpoint.
 func TestAgentAddFileCallsAPI(t *testing.T) {
 	var gotBody map[string]any

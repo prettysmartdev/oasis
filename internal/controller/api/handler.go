@@ -2,15 +2,19 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
@@ -42,6 +46,13 @@ type Handler struct {
 	readOnly bool
 	version  string
 	onSetup  func(net.Listener) // called with the tsnet listener after first-run setup
+	harness  agentpkg.AgentHarness
+	runsDir  string
+	// claudeOAuthToken is set via POST /api/v1/setup and injected into claude subprocesses.
+	// It is never persisted to SQLite, never logged, and never returned in API responses.
+	// If the controller restarts the token is lost; the user must re-run oasis init.
+	claudeOAuthToken string
+	chatTimeout      time.Duration
 }
 
 // New creates a new Handler. Pass nil for dependencies not yet available (e.g. in tests).
@@ -66,6 +77,46 @@ func (h *Handler) SetOnSetup(fn func(net.Listener)) {
 	h.onSetup = fn
 }
 
+// SetHarness sets the AgentHarness used to execute agents.
+func (h *Handler) SetHarness(harness agentpkg.AgentHarness) {
+	h.harness = harness
+}
+
+// SetRunsDir sets the base directory for agent run work directories.
+func (h *Handler) SetRunsDir(dir string) {
+	h.runsDir = dir
+}
+
+// SetChatTimeout sets the timeout for synchronous chat invocations.
+func (h *Handler) SetChatTimeout(d time.Duration) {
+	h.chatTimeout = d
+}
+
+// claudeEnv returns the extra env vars to inject into claude subprocesses.
+// Returns nil if no token has been configured.
+func (h *Handler) claudeEnv() []string {
+	if h.claudeOAuthToken == "" {
+		return nil
+	}
+	return []string{"CLAUDE_CODE_OAUTH_TOKEN=" + h.claudeOAuthToken}
+}
+
+// activeHarness returns the configured harness or the default StubHarness.
+func (h *Handler) activeHarness() agentpkg.AgentHarness {
+	if h.harness != nil {
+		return h.harness
+	}
+	return agentpkg.StubHarness{}
+}
+
+// activeRunsDir returns the configured runs dir or a temp directory fallback.
+func (h *Handler) activeRunsDir() string {
+	if h.runsDir != "" {
+		return h.runsDir
+	}
+	return os.TempDir()
+}
+
 // RegisterRoutes registers all API routes on the provided mux.
 // Write-mutating routes are omitted when readOnly is true.
 // For the tsnet (readOnly) handler a catch-all reverse proxy to NGINX is added so
@@ -85,6 +136,10 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/agents/{slug}/runs/latest", h.handleGetLatestAgentRun)
 	mux.HandleFunc("POST /api/v1/agents/{slug}/webhook", h.handleAgentWebhook)
 	mux.HandleFunc("POST /api/v1/agents/{slug}/run", h.handleTriggerAgentRun)
+
+	// Chat endpoints (available on both management and tsnet handlers).
+	mux.HandleFunc("POST /api/v1/chat/messages", h.handleCreateChatMessage)
+	mux.HandleFunc("GET /api/v1/chat/messages", h.handleListChatMessages)
 
 	if !h.readOnly {
 		mux.HandleFunc("POST /api/v1/apps", h.handleCreateApp)
@@ -521,6 +576,7 @@ func (h *Handler) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 type setupRequest struct {
 	TailscaleAuthKey string `json:"tailscaleAuthKey"`
 	Hostname         string `json:"hostname"`
+	ClaudeOAuthToken string `json:"claude_oauth_token"` // optional; never logged
 }
 
 func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
@@ -542,6 +598,11 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 	// Set TS_AUTHKEY without logging it.
 	if req.TailscaleAuthKey != "" {
 		os.Setenv("TS_AUTHKEY", req.TailscaleAuthKey) //nolint:errcheck
+	}
+
+	// Store Claude OAuth token in memory — never persisted, never logged.
+	if req.ClaudeOAuthToken != "" {
+		h.claudeOAuthToken = req.ClaudeOAuthToken
 	}
 
 	// Update hostname in settings if provided.
@@ -623,6 +684,7 @@ type agentJSON struct {
 	Trigger     string `json:"trigger"`
 	Schedule    string `json:"schedule"`
 	OutputFmt   string `json:"outputFmt"`
+	Model       string `json:"model"`
 	Enabled     bool   `json:"enabled"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
@@ -650,6 +712,7 @@ func toAgentJSON(a db.Agent) agentJSON {
 		Trigger:     a.Trigger,
 		Schedule:    a.Schedule,
 		OutputFmt:   a.OutputFmt,
+		Model:       a.Model,
 		Enabled:     a.Enabled,
 		CreatedAt:   a.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:   a.UpdatedAt.UTC().Format(time.RFC3339),
@@ -723,6 +786,7 @@ type createAgentRequest struct {
 	Trigger     string `json:"trigger"`
 	Schedule    string `json:"schedule"`
 	OutputFmt   string `json:"outputFmt"`
+	Model       string `json:"model"`
 	Enabled     *bool  `json:"enabled"` // defaults to true when omitted
 }
 
@@ -784,6 +848,7 @@ func (h *Handler) handleCreateAgent(w http.ResponseWriter, r *http.Request) {
 		Trigger:     req.Trigger,
 		Schedule:    req.Schedule,
 		OutputFmt:   req.OutputFmt,
+		Model:       req.Model,
 		Enabled:     enabled,
 		CreatedAt:   now,
 		UpdatedAt:   now,
@@ -807,6 +872,7 @@ type updateAgentRequest struct {
 	Trigger     *string `json:"trigger"`
 	Schedule    *string `json:"schedule"`
 	OutputFmt   *string `json:"outputFmt"`
+	Model       *string `json:"model"`
 	Enabled     *bool   `json:"enabled"`
 }
 
@@ -886,6 +952,9 @@ func (h *Handler) handleUpdateAgent(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Enabled != nil {
 		fields["enabled"] = *req.Enabled
+	}
+	if req.Model != nil {
+		fields["model"] = *req.Model
 	}
 
 	if err := h.store.UpdateAgent(r.Context(), slug, fields); errors.Is(err, db.ErrNotFound) {
@@ -988,6 +1057,15 @@ func (h *Handler) triggerRun(w http.ResponseWriter, r *http.Request, triggerSrc 
 	}
 
 	runID := uuid.New().String()
+
+	// Create work directory before the DB record.
+	workDir := filepath.Join(h.activeRunsDir(), runID)
+	if err := os.MkdirAll(workDir, 0o750); err != nil {
+		slog.Error("failed to create agent run work dir", "runId", runID, "err", err)
+		writeError(w, http.StatusInternalServerError, "failed to create run directory", "INTERNAL_ERROR")
+		return
+	}
+
 	run := db.AgentRun{
 		ID:         runID,
 		AgentID:    a.ID,
@@ -1002,13 +1080,9 @@ func (h *Handler) triggerRun(w http.ResponseWriter, r *http.Request, triggerSrc 
 
 	agent := *a
 	store := h.store
+	harness := h.activeHarness()
 	go func() {
-		output, runErr := agentpkg.Run(context.Background(), agent)
-		status := "done"
-		if runErr != nil {
-			status = "error"
-			output = runErr.Error()
-		}
+		output, status := agentpkg.ExecuteRun(context.Background(), harness, agent, workDir)
 		finishedAt := time.Now().UTC()
 		if updateErr := store.UpdateAgentRun(context.Background(), runID, status, output, finishedAt); updateErr != nil {
 			slog.Error("failed to update agent run", "runId", runID, "err", updateErr)
@@ -1061,4 +1135,142 @@ func (h *Handler) handleGetLatestAgentRun(w http.ResponseWriter, r *http.Request
 		return
 	}
 	writeJSON(w, http.StatusOK, toAgentRunJSON(*run))
+}
+
+// --- Chat --------------------------------------------------------------------
+
+// chatMessageJSON is the wire representation of a ChatMessage.
+type chatMessageJSON struct {
+	ID        string `json:"id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"createdAt"`
+}
+
+func toChatMessageJSON(m db.ChatMessage) chatMessageJSON {
+	return chatMessageJSON{
+		ID:        m.ID,
+		Role:      m.Role,
+		Content:   m.Content,
+		CreatedAt: m.CreatedAt.UTC().Format(time.RFC3339),
+	}
+}
+
+type createChatMessageRequest struct {
+	Message string `json:"message"`
+}
+
+type createChatMessageResponse struct {
+	UserMessage      chatMessageJSON `json:"userMessage"`
+	AssistantMessage chatMessageJSON `json:"assistantMessage"`
+}
+
+func (h *Handler) handleListChatMessages(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "store not initialised", "STORE_UNAVAILABLE")
+		return
+	}
+	msgs, err := h.store.ListChatMessages(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list chat messages", "INTERNAL_ERROR")
+		return
+	}
+	items := make([]chatMessageJSON, 0, len(msgs))
+	for _, m := range msgs {
+		items = append(items, toChatMessageJSON(m))
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items)})
+}
+
+func (h *Handler) handleCreateChatMessage(w http.ResponseWriter, r *http.Request) {
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, "store not initialised", "STORE_UNAVAILABLE")
+		return
+	}
+	var req createChatMessageRequest
+	if err := readJSON(r, &req); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid request body", "INVALID_BODY")
+		return
+	}
+	if req.Message == "" {
+		writeError(w, http.StatusBadRequest, "message is required", "INVALID_MESSAGE")
+		return
+	}
+
+	// Persist the user message.
+	userMsg := db.ChatMessage{
+		ID:        uuid.New().String(),
+		Role:      "user",
+		Content:   req.Message,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := h.store.CreateChatMessage(r.Context(), userMsg); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist user message", "INTERNAL_ERROR")
+		return
+	}
+
+	// Run claude --print <message> synchronously.
+	timeout := h.chatTimeout
+	if timeout == 0 {
+		timeout = 120 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
+
+	assistantContent, err := h.runChat(ctx, req.Message)
+	if err != nil {
+		// If the executor is unavailable, return 503.
+		if errors.Is(err, exec.ErrNotFound) {
+			writeError(w, http.StatusServiceUnavailable, "claude executor not available; install @anthropic-ai/claude-code", "EXECUTOR_UNAVAILABLE")
+			return
+		}
+		slog.Error("chat invocation failed", "err", err)
+		assistantContent = fmt.Sprintf("Error: %v", err)
+	}
+
+	// Persist the assistant message.
+	assistantMsg := db.ChatMessage{
+		ID:        uuid.New().String(),
+		Role:      "assistant",
+		Content:   assistantContent,
+		CreatedAt: time.Now().UTC(),
+	}
+	if err := h.store.CreateChatMessage(r.Context(), assistantMsg); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to persist assistant message", "INTERNAL_ERROR")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, createChatMessageResponse{
+		UserMessage:      toChatMessageJSON(userMsg),
+		AssistantMessage: toChatMessageJSON(assistantMsg),
+	})
+}
+
+// runChat invokes claude --print <message> and returns the stdout as the assistant response.
+func (h *Handler) runChat(ctx context.Context, message string) (string, error) {
+	claudeBin := os.Getenv("OASIS_CLAUDE_BIN")
+	if claudeBin == "" {
+		var err error
+		claudeBin, err = exec.LookPath("claude")
+		if err != nil {
+			return "", fmt.Errorf("claude binary not found on PATH: %w", err)
+		}
+	}
+
+	cmd := exec.CommandContext(ctx, claudeBin, "--print", message)
+	cmd.Env = append(os.Environ(), h.claudeEnv()...)
+
+	var out bytes.Buffer
+	cmd.Stdout = &out
+	var errOut bytes.Buffer
+	cmd.Stderr = &errOut
+
+	if err := cmd.Run(); err != nil {
+		combined := out.String() + errOut.String()
+		if combined != "" {
+			return combined, err
+		}
+		return "", err
+	}
+	return strings.TrimSpace(out.String()), nil
 }

@@ -33,6 +33,7 @@ type AgentDefinition struct {
 	Trigger     string `yaml:"trigger"`
 	Schedule    string `yaml:"schedule"`
 	OutputFmt   string `yaml:"outputFmt"`
+	Model       string `yaml:"model"`
 }
 
 // ParseAppFile reads and validates a YAML app definition file at path.

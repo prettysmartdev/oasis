@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -77,6 +79,19 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 		mgmtPort = promptStringDefault("Management port", "04515")
 	}
 
+	// Detect claude config on host.
+	home, _ := os.UserHomeDir()
+	claudeJSONPath := filepath.Join(home, ".claude.json")
+	claudeDirPath := filepath.Join(home, ".claude")
+	hasClaudeJSON := fileExists(claudeJSONPath)
+	hasClaudeDir := dirExists(claudeDirPath)
+
+	// Offer Claude authentication.
+	claudeOAuthToken := ""
+	if promptYesNo("Configure Claude authentication now?", true) {
+		claudeOAuthToken = setupClaudeAuth()
+	}
+
 	const devImage = "oasis:latest"
 	const remoteImage = "ghcr.io/prettysmartdev/oasis:latest"
 
@@ -107,12 +122,15 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 
 	// Step 5: Run container.
 	opts := docker.RunOptions{
-		Name:       containerName,
-		Image:      image,
-		Port:       mgmtPort,
-		TsAuthKey:  tsAuthKey,
-		TsHostname: tsHostname,
-		MgmtPort:   mgmtPort,
+		Name:           containerName,
+		Image:          image,
+		Port:           mgmtPort,
+		TsAuthKey:      tsAuthKey,
+		TsHostname:     tsHostname,
+		MgmtPort:       mgmtPort,
+		ClaudeJSONPath: claudeJSONPath,
+		ClaudeDirPath:  claudeDirPath,
+		MountClaude:    hasClaudeJSON && hasClaudeDir,
 	}
 	if err := docker.RunContainer(opts); err != nil {
 		return fmt.Errorf("starting container: %w", err)
@@ -155,9 +173,10 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 
 	_ = table.Spinner("Connecting to Tailscale...", func() error {
 		setupClient := client.New(endpoint, cliVersion).WithTimeout(90 * time.Second)
-		body := map[string]string{
-			"tailscaleAuthKey": tsAuthKey,
-			"hostname":         tsHostname,
+		body := map[string]any{
+			"tailscaleAuthKey":   tsAuthKey,
+			"hostname":           tsHostname,
+			"claude_oauth_token": claudeOAuthToken,
 		}
 		if err := setupClient.Post("/api/v1/setup", body, &sr); err != nil {
 			return err
@@ -192,6 +211,13 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 			oasisURL = hostname + ".ts.net"
 		}
 		fmt.Fprintf(cmd.OutOrStdout(), "Your oasis is ready at https://%s\n", oasisURL)
+	}
+
+	// Warn if claude auth paths were not mounted.
+	if !hasClaudeJSON || !hasClaudeDir {
+		fmt.Fprintln(os.Stderr, "\nWarning: ~/.claude.json and/or ~/.claude/ were not found on this host.")
+		fmt.Fprintln(os.Stderr, "Claude features inside oasis require authentication. To complete setup, run:")
+		fmt.Fprintln(os.Stderr, "\n  docker exec -it oasis claude")
 	}
 
 	return nil
@@ -233,4 +259,70 @@ func isValidURL(s string) bool {
 		return false
 	}
 	return u.Scheme == "http" || u.Scheme == "https"
+}
+
+// fileExists returns true if path exists and is a regular file.
+func fileExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.Mode().IsRegular()
+}
+
+// dirExists returns true if path exists and is a directory.
+func dirExists(path string) bool {
+	fi, err := os.Stat(path)
+	return err == nil && fi.IsDir()
+}
+
+// promptYesNo prompts the user with a yes/no question. defaultYes controls
+// whether pressing Enter (empty input) is treated as yes.
+func promptYesNo(question string, defaultYes bool) bool {
+	if defaultYes {
+		fmt.Fprintf(os.Stderr, "%s [Y/n]: ", question)
+	} else {
+		fmt.Fprintf(os.Stderr, "%s [y/N]: ", question)
+	}
+	var s string
+	fmt.Fscanln(os.Stdin, &s)
+	s = strings.TrimSpace(strings.ToLower(s))
+	if s == "" {
+		return defaultYes
+	}
+	return s == "y" || s == "yes"
+}
+
+// setupClaudeAuth runs `claude setup-token` interactively and returns the token
+// the user pastes. Returns an empty string if claude is not found or the user
+// skips token entry.
+func setupClaudeAuth() string {
+	claudePath, err := exec.LookPath("claude")
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "Warning: 'claude' binary not found on PATH. Skipping Claude authentication setup.")
+		fmt.Fprintln(os.Stderr, "You can configure this later by re-running 'oasis init' or setting the token manually.")
+		return ""
+	}
+
+	// Run claude setup-token with terminal I/O connected.
+	setupCmd := exec.Command(claudePath, "setup-token")
+	setupCmd.Stdin = os.Stdin
+	setupCmd.Stdout = os.Stdout
+	setupCmd.Stderr = os.Stderr
+	_ = setupCmd.Run() // ignore exit code — some platforms exit non-zero
+
+	fmt.Fprint(os.Stderr, "Paste the OAuth token you copied: ")
+	var token string
+	if term.IsTerminal(int(os.Stdin.Fd())) {
+		b, err := term.ReadPassword(int(os.Stdin.Fd()))
+		fmt.Fprintln(os.Stderr)
+		if err == nil {
+			token = strings.TrimSpace(string(b))
+		}
+	} else {
+		fmt.Fscanln(os.Stdin, &token)
+		token = strings.TrimSpace(token)
+	}
+
+	if token == "" {
+		fmt.Fprintln(os.Stderr, "Warning: No token provided. Claude features will be unavailable until a token is configured.")
+	}
+	return token
 }

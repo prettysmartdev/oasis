@@ -115,4 +115,27 @@ describe('BottomNav', () => {
     await act(async () => {})
     expect(screen.queryByRole('button', { name: /Open settings/i })).not.toBeInTheDocument()
   })
+
+  // Spec: the input must NOT auto-focus when the palm tree is tapped.
+  it('text input does not auto-focus when palm tree button is tapped', async () => {
+    render(<BottomNav />)
+    await act(async () => {})
+    const logoBtn = screen.getByRole('button', { name: /Open chat/i })
+    fireEvent.click(logoBtn)
+    // The chat bar slides open but the input should not steal focus.
+    const input = screen.getByRole('textbox', { name: /Chat with OaSis/i })
+    expect(document.activeElement).not.toBe(input)
+  })
+
+  it('calls onChatOpen when text input receives focus', async () => {
+    const mockOnChatOpen = jest.fn()
+    render(<BottomNav onChatOpen={mockOnChatOpen} />)
+    await act(async () => {})
+    // Open the chat bar first
+    fireEvent.click(screen.getByRole('button', { name: /Open chat/i }))
+    // Then focus the input
+    const input = screen.getByRole('textbox', { name: /Chat with OaSis/i })
+    fireEvent.focus(input)
+    expect(mockOnChatOpen).toHaveBeenCalledTimes(1)
+  })
 })

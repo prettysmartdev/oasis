@@ -44,6 +44,8 @@ interface BottomNavProps {
   appOpen?: boolean
   /** Called to close the iFrame and return to the homescreen. */
   onCloseApp?: () => void
+  /** Called when the chat input receives focus — used to open the full ChatOverlay. */
+  onChatOpen?: () => void
 }
 
 /**
@@ -62,7 +64,7 @@ interface BottomNavProps {
  * polled every 30 seconds. Gray = no data, green = fully healthy,
  * amber = degraded, red = error/disconnected.
  */
-export default function BottomNav({ appOpen, onCloseApp }: BottomNavProps) {
+export default function BottomNav({ appOpen, onCloseApp, onChatOpen }: BottomNavProps) {
   const prefersReducedMotion = useReducedMotion()
   const [status, setStatus] = useState<Status | null>(null)
   const [settingsOpen, setSettingsOpen] = useState(false)
@@ -80,12 +82,6 @@ export default function BottomNav({ appOpen, onCloseApp }: BottomNavProps) {
     const interval = setInterval(loadStatus, 30_000)
     return () => clearInterval(interval)
   }, [])
-
-  useEffect(() => {
-    if (chatOpen) {
-      chatInputRef.current?.focus()
-    }
-  }, [chatOpen])
 
   return (
     <>
@@ -121,6 +117,7 @@ export default function BottomNav({ appOpen, onCloseApp }: BottomNavProps) {
               placeholder="Ask OaSis…"
               aria-label="Chat with OaSis"
               className="w-full rounded-full bg-slate-900/90 border border-slate-700 text-white text-sm px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-slate-500"
+              onFocus={onChatOpen}
               onKeyDown={(e) => {
                 if (e.key === 'Escape') setChatOpen(false)
               }}

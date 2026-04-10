@@ -107,6 +107,9 @@ These must **never** be violated. CI enforces most of them.
 | `OASIS_DB_PATH` | `/data/db/oasis.db` | SQLite database path |
 | `OASIS_TS_STATE_DIR` | `/data/ts-state` | tsnet state directory |
 | `OASIS_LOG_LEVEL` | `info` | Log verbosity |
+| `OASIS_AGENT_RUNS_DIR` | `/data/agent-runs` | Base directory for agent run work directories |
+| `OASIS_CLAUDE_BIN` | `` | Override path to the `claude` CLI binary (empty = resolve from `$PATH`) |
+| `OASIS_CHAT_TIMEOUT` | `120s` | Timeout for synchronous chat invocations |
 
 ---
 

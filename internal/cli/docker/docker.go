@@ -16,6 +16,11 @@ type RunOptions struct {
 	TsAuthKey  string
 	TsHostname string
 	MgmtPort   string
+	// Claude auth mount fields. When MountClaude is true, ClaudeJSONPath and
+	// ClaudeDirPath are bind-mounted read-only into the container.
+	MountClaude    bool
+	ClaudeJSONPath string // absolute host path to ~/.claude.json
+	ClaudeDirPath  string // absolute host path to ~/.claude/
 }
 
 // lookupDocker returns the path to the docker binary or an error if not found.
@@ -66,18 +71,30 @@ func RunContainer(opts RunOptions) error {
 		mgmtPort = "04515"
 	}
 
-	_, err := run(
+	dockerArgs := []string{
 		"run", "-d",
 		"--name", opts.Name,
 		"--restart", "unless-stopped",
 		"-v", "oasis-db:/data/db",
 		"-v", "oasis-ts-state:/data/ts-state",
+		"-v", "oasis-agent-runs:/data/agent-runs",
 		"-p", fmt.Sprintf("127.0.0.1:%s:%s", port, mgmtPort),
 		"-e", fmt.Sprintf("TS_AUTHKEY=%s", opts.TsAuthKey),
 		"-e", fmt.Sprintf("OASIS_HOSTNAME=%s", opts.TsHostname),
 		"-e", fmt.Sprintf("OASIS_MGMT_PORT=%s", mgmtPort),
-		opts.Image,
-	)
+	}
+
+	// Add claude auth mounts if both paths exist on the host.
+	if opts.MountClaude && opts.ClaudeJSONPath != "" && opts.ClaudeDirPath != "" {
+		dockerArgs = append(dockerArgs,
+			"-v", opts.ClaudeJSONPath+":/root/.claude.json:ro",
+			"-v", opts.ClaudeDirPath+":/root/.claude/:ro",
+		)
+	}
+
+	dockerArgs = append(dockerArgs, opts.Image)
+
+	_, err := run(dockerArgs...)
 	return err
 }
 

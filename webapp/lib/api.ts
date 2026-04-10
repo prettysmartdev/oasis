@@ -98,6 +98,26 @@ export interface Status {
   version: string
 }
 
+/** A single turn in the persistent chat conversation. */
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+}
+
+/** Response from POST /api/v1/chat/messages. */
+export interface ChatResponse {
+  userMessage: ChatMessage
+  assistantMessage: ChatMessage
+}
+
+/** Paginated chat history from GET /api/v1/chat/messages. */
+export interface ChatHistoryResponse {
+  items: ChatMessage[]
+  total: number
+}
+
 /** Paginated list envelope returned by `GET /api/v1/apps`. */
 export interface AppsResponse {
   items: App[]
@@ -178,4 +198,14 @@ export async function fetchAgentRun(runId: string): Promise<AgentRun> {
 /** Fetches the latest agent run for a given agent slug. */
 export async function fetchLatestAgentRun(slug: string): Promise<AgentRun> {
   return apiFetch<AgentRun>(`/api/v1/agents/${slug}/runs/latest`)
+}
+
+/** Fetches the full chat history. */
+export async function getChatHistory(): Promise<ChatHistoryResponse> {
+  return apiFetch<ChatHistoryResponse>('/api/v1/chat/messages')
+}
+
+/** Sends a message and returns both the user and assistant messages. */
+export async function sendChatMessage(message: string): Promise<ChatResponse> {
+  return apiPost<ChatResponse>('/api/v1/chat/messages', { message })
 }

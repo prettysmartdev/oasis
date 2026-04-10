@@ -14,6 +14,7 @@ import (
 	"time"
 
 	agentpkg "github.com/prettysmartdev/oasis/internal/controller/agent"
+	claudepkg "github.com/prettysmartdev/oasis/internal/controller/agent/claude"
 	"github.com/prettysmartdev/oasis/internal/controller/api"
 	"github.com/prettysmartdev/oasis/internal/controller/db"
 	"github.com/prettysmartdev/oasis/internal/controller/health"
@@ -65,6 +66,9 @@ func main() {
 	tsStateDir := envOrDefault("OASIS_TS_STATE_DIR", "/data/ts-state")
 	logLevel := envOrDefault("OASIS_LOG_LEVEL", "info")
 	tsAPIKey := os.Getenv("TAILSCALE_API_KEY") // optional; enables automatic conflict resolution
+	runsDir := envOrDefault("OASIS_AGENT_RUNS_DIR", "/data/agent-runs")
+	claudeBin := os.Getenv("OASIS_CLAUDE_BIN")
+	chatTimeoutStr := envOrDefault("OASIS_CHAT_TIMEOUT", "120s")
 
 	level := slog.LevelInfo
 	if logLevel == "debug" {
@@ -88,6 +92,13 @@ func main() {
 	}
 	defer store.Close()
 	logger.Info("database opened", "path", dbPath)
+
+	// Create agent runs directory.
+	if err := os.MkdirAll(runsDir, 0o750); err != nil {
+		logger.Error("failed to create agent runs directory", "path", runsDir, "err", err)
+		os.Exit(1)
+	}
+	logger.Info("agent runs directory ready", "path", runsDir)
 
 	// 3. Create NGINX configurator.
 	configurator := nginx.NewWithConfig("/etc/nginx/nginx.conf", nginx.FindNginxPID)
@@ -132,6 +143,23 @@ func main() {
 	// Register the setup callback so first-run setup (via POST /api/v1/setup) also
 	// starts the webapp API server without requiring a container restart.
 	mgmtHandler.SetOnSetup(startTsnetServer)
+
+	// Create the Claude harness. The token is populated later via /api/v1/setup.
+	claudeHarness := claudepkg.New(claudeBin, nil)
+
+	// Parse chat timeout.
+	chatTimeout, err := time.ParseDuration(chatTimeoutStr)
+	if err != nil {
+		chatTimeout = 120 * time.Second
+	}
+
+	mgmtHandler.SetHarness(claudeHarness)
+	mgmtHandler.SetRunsDir(runsDir)
+	mgmtHandler.SetChatTimeout(chatTimeout)
+	// tsnetHandler gets the same harness/runsDir for consistency (webhook triggers are on tsnet too).
+	tsnetHandler.SetHarness(claudeHarness)
+	tsnetHandler.SetRunsDir(runsDir)
+	tsnetHandler.SetChatTimeout(chatTimeout)
 
 	// 6. Start management API server (loopback only).
 	mgmtAddr := buildMgmtAddr(mgmtHost, port)
@@ -188,7 +216,7 @@ func main() {
 	logger.Info("health checker started", "interval", 30*time.Second)
 
 	// 8b. Start agent scheduler.
-	scheduler := agentpkg.NewScheduler(store)
+	scheduler := agentpkg.NewScheduler(store, claudeHarness, runsDir)
 	go scheduler.Start(ctx)
 	logger.Info("agent scheduler started")
 

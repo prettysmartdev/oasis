@@ -107,7 +107,7 @@ func (s *Store) migrate(ctx context.Context) error {
 	if err := s.db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
 		return err
 	}
-	if version >= 3 {
+	if version >= 4 {
 		return nil
 	}
 
@@ -176,10 +176,29 @@ CREATE TABLE IF NOT EXISTS agent_runs (
 		}
 	}
 
-	// Migration 3: add access_type to apps.
-	_, err := s.db.ExecContext(ctx, `
+	if version <= 2 {
+		// Migration 3: add access_type to apps.
+		_, err := s.db.ExecContext(ctx, `
 ALTER TABLE apps ADD COLUMN access_type TEXT NOT NULL DEFAULT 'direct';
 PRAGMA user_version = 3;
+`)
+		if err != nil {
+			return err
+		}
+	}
+
+	// Migration 4: add model to agents; add chat_messages table.
+	_, err := s.db.ExecContext(ctx, `
+ALTER TABLE agents ADD COLUMN model TEXT NOT NULL DEFAULT '';
+
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id          TEXT PRIMARY KEY,
+    role        TEXT NOT NULL,
+    content     TEXT NOT NULL,
+    created_at  TEXT NOT NULL
+);
+
+PRAGMA user_version = 4;
 `)
 	return err
 }

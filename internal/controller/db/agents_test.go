@@ -234,6 +234,71 @@ func TestGetLatestAgentRunNotFound(t *testing.T) {
 	}
 }
 
+// TestCreateAgentWithModelPersists verifies that the Model field is stored and retrieved correctly.
+func TestCreateAgentWithModelPersists(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	a := newTestAgent("model-agent")
+	a.Model = "claude-opus-4-6"
+	if err := s.CreateAgent(ctx, a); err != nil {
+		t.Fatalf("CreateAgent error: %v", err)
+	}
+
+	got, err := s.GetAgent(ctx, a.Slug)
+	if err != nil {
+		t.Fatalf("GetAgent error: %v", err)
+	}
+	if got.Model != "claude-opus-4-6" {
+		t.Errorf("Model: got %q, want %q", got.Model, "claude-opus-4-6")
+	}
+}
+
+// TestCreateAgentWithEmptyModelStoresEmpty verifies that an empty Model field is stored
+// and retrieved as an empty string.
+func TestCreateAgentWithEmptyModelStoresEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	a := newTestAgent("empty-model-agent")
+	a.Model = ""
+	if err := s.CreateAgent(ctx, a); err != nil {
+		t.Fatalf("CreateAgent error: %v", err)
+	}
+
+	got, err := s.GetAgent(ctx, a.Slug)
+	if err != nil {
+		t.Fatalf("GetAgent error: %v", err)
+	}
+	if got.Model != "" {
+		t.Errorf("Model: got %q, want empty string", got.Model)
+	}
+}
+
+// TestUpdateAgentModelField verifies that the model field can be updated via UpdateAgent.
+func TestUpdateAgentModelField(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	a := newTestAgent("update-model-agent")
+	a.Model = ""
+	if err := s.CreateAgent(ctx, a); err != nil {
+		t.Fatalf("CreateAgent error: %v", err)
+	}
+
+	if err := s.UpdateAgent(ctx, a.Slug, map[string]any{"model": "claude-haiku-4-5-20251001"}); err != nil {
+		t.Fatalf("UpdateAgent error: %v", err)
+	}
+
+	got, err := s.GetAgent(ctx, a.Slug)
+	if err != nil {
+		t.Fatalf("GetAgent error: %v", err)
+	}
+	if got.Model != "claude-haiku-4-5-20251001" {
+		t.Errorf("Model after update: got %q, want %q", got.Model, "claude-haiku-4-5-20251001")
+	}
+}
+
 // TestGetRunningAgentRun verifies GetRunningAgentRun returns a run with status="running".
 func TestGetRunningAgentRun(t *testing.T) {
 	s := newTestStore(t)

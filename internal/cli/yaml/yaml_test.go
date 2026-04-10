@@ -337,6 +337,44 @@ accessType: "invalid"
 	}
 }
 
+// TestParseAgentFileWithModelField verifies that the model field is parsed correctly.
+func TestParseAgentFileWithModelField(t *testing.T) {
+	content := `
+name: "My Agent"
+slug: "my-agent"
+prompt: "do something"
+trigger: "tap"
+model: "claude-opus-4-6"
+`
+	path := writeTemp(t, content)
+	def, err := ParseAgentFile(path)
+	if err != nil {
+		t.Fatalf("ParseAgentFile error: %v", err)
+	}
+	if def.Model != "claude-opus-4-6" {
+		t.Errorf("Model: got %q, want %q", def.Model, "claude-opus-4-6")
+	}
+}
+
+// TestParseAgentFileModelOmittedDefaultsEmpty verifies that omitting the model field
+// results in an empty string.
+func TestParseAgentFileModelOmittedDefaultsEmpty(t *testing.T) {
+	content := `
+name: "My Agent"
+slug: "my-agent"
+prompt: "do something"
+trigger: "tap"
+`
+	path := writeTemp(t, content)
+	def, err := ParseAgentFile(path)
+	if err != nil {
+		t.Fatalf("ParseAgentFile error: %v", err)
+	}
+	if def.Model != "" {
+		t.Errorf("Model: got %q, want empty string", def.Model)
+	}
+}
+
 // TestParseAppFileAccessTypeOmittedDefaultsToProxy verifies that omitting the accessType
 // field causes ParseAppFile to default it to "proxy".
 func TestParseAppFileAccessTypeOmittedDefaultsToProxy(t *testing.T) {

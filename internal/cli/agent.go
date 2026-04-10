@@ -28,6 +28,7 @@ type agentRecord struct {
 	Trigger     string `json:"trigger"`
 	Schedule    string `json:"schedule"`
 	OutputFmt   string `json:"outputFmt"`
+	Model       string `json:"model"`
 	Enabled     bool   `json:"enabled"`
 	CreatedAt   string `json:"createdAt"`
 	UpdatedAt   string `json:"updatedAt"`
@@ -49,7 +50,7 @@ func init() {
 func newAgentAddCmd() *cobra.Command {
 	var (
 		name, slug, prompt, trigger, schedule, outputFmt string
-		description, icon, filePath                       string
+		description, icon, filePath, model               string
 	)
 
 	cmd := &cobra.Command{
@@ -61,7 +62,8 @@ func newAgentAddCmd() *cobra.Command {
 				flagsChanged := cmd.Flags().Changed("name") || cmd.Flags().Changed("slug") ||
 					cmd.Flags().Changed("prompt") || cmd.Flags().Changed("trigger") ||
 					cmd.Flags().Changed("schedule") || cmd.Flags().Changed("output-fmt") ||
-					cmd.Flags().Changed("description") || cmd.Flags().Changed("icon")
+					cmd.Flags().Changed("description") || cmd.Flags().Changed("icon") ||
+					cmd.Flags().Changed("model")
 				if flagsChanged {
 					fmt.Fprintln(os.Stderr, "Flags ignored when -f is provided")
 				}
@@ -79,6 +81,7 @@ func newAgentAddCmd() *cobra.Command {
 					"trigger":     def.Trigger,
 					"schedule":    def.Schedule,
 					"outputFmt":   def.OutputFmt,
+					"model":       def.Model,
 					"enabled":     true,
 				}
 				var result agentRecord
@@ -133,6 +136,7 @@ func newAgentAddCmd() *cobra.Command {
 				"trigger":     trigger,
 				"schedule":    schedule,
 				"outputFmt":   outputFmt,
+				"model":       model,
 				"enabled":     true,
 			}
 
@@ -164,6 +168,7 @@ func newAgentAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&outputFmt, "output-fmt", "", "Output format: markdown, html, or plaintext (default: markdown)")
 	cmd.Flags().StringVar(&description, "description", "", "Agent description")
 	cmd.Flags().StringVar(&icon, "icon", "", "Agent icon URL or emoji")
+	cmd.Flags().StringVar(&model, "model", "", "Claude model ID (e.g. claude-opus-4-6); omit to use default")
 
 	return cmd
 }
@@ -201,6 +206,7 @@ prompt: ""
 trigger: "tap"
 schedule: ""
 outputFmt: "markdown"
+model: ""
 `, name, slug)
 
 			if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
@@ -295,6 +301,7 @@ func newAgentShowCmd() *cobra.Command {
 				{Key: "Trigger", Value: a.Trigger},
 				{Key: "Schedule", Value: a.Schedule},
 				{Key: "Output Format", Value: a.OutputFmt},
+				{Key: "Model", Value: a.Model},
 				{Key: "Status", Value: status},
 				{Key: "Created", Value: a.CreatedAt},
 				{Key: "Updated", Value: a.UpdatedAt},
@@ -363,7 +370,7 @@ func newAgentDisableCmd() *cobra.Command {
 }
 
 func newAgentUpdateCmd() *cobra.Command {
-	var name, prompt, schedule, outputFmt, description, icon, trigger string
+	var name, prompt, schedule, outputFmt, description, icon, trigger, model string
 
 	cmd := &cobra.Command{
 		Use:   "update <slug>",
@@ -394,6 +401,9 @@ func newAgentUpdateCmd() *cobra.Command {
 			if cmd.Flags().Changed("trigger") {
 				body["trigger"] = trigger
 			}
+			if cmd.Flags().Changed("model") {
+				body["model"] = model
+			}
 
 			if len(body) == 0 {
 				fmt.Fprintln(os.Stderr, "Nothing to update — provide at least one flag.")
@@ -422,6 +432,7 @@ func newAgentUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&description, "description", "", "New description")
 	cmd.Flags().StringVar(&icon, "icon", "", "New icon URL or emoji")
 	cmd.Flags().StringVar(&trigger, "trigger", "", "New trigger type (tap, schedule, webhook)")
+	cmd.Flags().StringVar(&model, "model", "", "Claude model ID; empty means use default")
 
 	return cmd
 }

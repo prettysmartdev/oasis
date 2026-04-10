@@ -20,6 +20,7 @@ type Agent struct {
 	Trigger     string    `json:"trigger"`   // "tap" | "schedule" | "webhook"
 	Schedule    string    `json:"schedule"`  // cron expression; only when trigger="schedule"
 	OutputFmt   string    `json:"outputFmt"` // "markdown" | "html" | "plaintext"
+	Model       string    `json:"model"`     // optional claude model override (e.g. "claude-opus-4-5")
 	Enabled     bool      `json:"enabled"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
@@ -39,10 +40,10 @@ type AgentRun struct {
 // CreateAgent inserts a new agent record.
 func (s *Store) CreateAgent(ctx context.Context, agent Agent) error {
 	_, err := s.db.ExecContext(ctx, `
-INSERT INTO agents (id, name, slug, description, icon, prompt, trigger, schedule, output_fmt, enabled, created_at, updated_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+INSERT INTO agents (id, name, slug, description, icon, prompt, trigger, schedule, output_fmt, model, enabled, created_at, updated_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		agent.ID, agent.Name, agent.Slug, agent.Description, agent.Icon,
-		agent.Prompt, agent.Trigger, agent.Schedule, agent.OutputFmt,
+		agent.Prompt, agent.Trigger, agent.Schedule, agent.OutputFmt, agent.Model,
 		boolToInt(agent.Enabled),
 		agent.CreatedAt.UTC().Format(time.RFC3339),
 		agent.UpdatedAt.UTC().Format(time.RFC3339),
@@ -53,7 +54,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 // GetAgent retrieves an agent by slug. Returns ErrNotFound if it does not exist.
 func (s *Store) GetAgent(ctx context.Context, slug string) (*Agent, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, name, slug, description, icon, prompt, trigger, schedule, output_fmt, enabled, created_at, updated_at
+		`SELECT id, name, slug, description, icon, prompt, trigger, schedule, output_fmt, model, enabled, created_at, updated_at
 		 FROM agents WHERE slug = ?`, slug)
 	a, err := scanAgent(row)
 	if err != nil {
@@ -65,7 +66,7 @@ func (s *Store) GetAgent(ctx context.Context, slug string) (*Agent, error) {
 // ListAgents returns all agents ordered by creation time (oldest first).
 func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, name, slug, description, icon, prompt, trigger, schedule, output_fmt, enabled, created_at, updated_at
+		`SELECT id, name, slug, description, icon, prompt, trigger, schedule, output_fmt, model, enabled, created_at, updated_at
 		 FROM agents ORDER BY created_at ASC`)
 	if err != nil {
 		return nil, err
@@ -84,7 +85,7 @@ func (s *Store) ListAgents(ctx context.Context) ([]Agent, error) {
 }
 
 // UpdateAgent applies a partial update to the agent identified by slug.
-// Supported fields: name, description, icon, prompt, trigger, schedule, outputFmt, enabled.
+// Supported fields: name, description, icon, prompt, trigger, schedule, outputFmt, model, enabled.
 // Returns ErrNotFound if the slug does not exist.
 func (s *Store) UpdateAgent(ctx context.Context, slug string, fields map[string]any) error {
 	if len(fields) == 0 {
@@ -100,6 +101,7 @@ func (s *Store) UpdateAgent(ctx context.Context, slug string, fields map[string]
 		"trigger":     "trigger",
 		"schedule":    "schedule",
 		"outputFmt":   "output_fmt",
+		"model":       "model",
 		"enabled":     "enabled",
 	}
 
@@ -232,7 +234,7 @@ func scanAgent(s scanner) (Agent, error) {
 	)
 	err := s.Scan(
 		&a.ID, &a.Name, &a.Slug, &a.Description, &a.Icon,
-		&a.Prompt, &a.Trigger, &a.Schedule, &a.OutputFmt,
+		&a.Prompt, &a.Trigger, &a.Schedule, &a.OutputFmt, &a.Model,
 		&enabledI, &createdS, &updatedS,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -231,6 +231,9 @@ All variables are documented in `.env.local.example`. Copy that file to `.env.lo
 | `OASIS_TS_STATE_DIR` | `/data/ts-state` | Tailscale tsnet state directory inside the container |
 | `OASIS_LOG_LEVEL` | `info` | Log verbosity: `info` \| `debug` \| `warn` \| `error` |
 | `NEXT_PUBLIC_API_BASE_URL` | `` (same origin) | Base URL for controller API calls from the webapp. Leave empty in production (NGINX serves both); set to `http://localhost:04515` for local dev. |
+| `OASIS_AGENT_RUNS_DIR` | `/data/agent-runs` | Base directory for agent run work directories (one sub-dir per run ID, retained for debugging) |
+| `OASIS_CLAUDE_BIN` | `` (resolve from `$PATH`) | Override path to the `claude` CLI binary; useful for testing with a fake binary |
+| `OASIS_CHAT_TIMEOUT` | `120s` | Timeout for synchronous chat invocations (`POST /api/v1/chat/messages`); Go duration string |
 
 ---
 

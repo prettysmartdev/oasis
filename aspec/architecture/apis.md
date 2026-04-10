@@ -27,7 +27,8 @@ Objects:
   - `accessType: "direct"` — tapping the icon opens the upstream URL in a new browser tab (no NGINX proxy route is created)
   - `accessType: "proxy"` — NGINX reverse-proxies `/apps/<slug>/` to the upstream; tapping the icon opens a full-screen iFrame inside the oasis dashboard. `X-Frame-Options` and `Content-Security-Policy` response headers are stripped by NGINX so the browser can embed the upstream. **Known limitation:** upstream apps that hard-code the root path `/` in asset references may break when served under a path prefix (e.g. `/apps/my-app/`).
   - Note: the webapp uses the presence of `"agent"` in `tags` to decide which dashboard page an item appears on — items tagged `"agent"` appear on the Agents page, all others on the Apps page.
-- Agent: { id (uuid), name (string), slug (string, URL-safe), description (string), icon (string, URL or emoji), prompt (string), trigger ("tap"|"schedule"|"webhook"), schedule (string, cron expression — present only when trigger="schedule"), outputFmt ("markdown"|"html"|"plaintext"), enabled (bool), createdAt (RFC3339), updatedAt (RFC3339) }
+- Agent: { id (uuid), name (string), slug (string, URL-safe), description (string), icon (string, URL or emoji), prompt (string), trigger ("tap"|"schedule"|"webhook"), schedule (string, cron expression — present only when trigger="schedule"), outputFmt ("markdown"|"html"|"plaintext"), model (string, optional — Claude model ID, e.g. "claude-opus-4-6"; empty string means use the CLI default), enabled (bool), createdAt (RFC3339), updatedAt (RFC3339) }
+- ChatMessage: { id (uuid), role ("user"|"assistant"), content (string), createdAt (RFC3339) }
 - AgentRun: { id (uuid), agentId (uuid), triggerSrc ("tap"|"schedule"|"webhook"), status ("running"|"done"|"error"), output (string), startedAt (RFC3339), finishedAt (RFC3339, omitted if still running) }
 - Settings: { tailscaleHostname (string), mgmtPort (int), theme ("dark"|"light"|"system") }
   - Note: tailscaleAuthKey is write-only; never returned in GET responses
@@ -108,13 +109,20 @@ prompt:     <string, required>
 trigger:    <string, required — tap|schedule|webhook>
 schedule:   <string, required when trigger=schedule — 5-field cron expression>
 outputFmt:  <string, optional — markdown|html|plaintext; default: markdown>
+model:      <string, optional — Claude model ID, e.g. "claude-opus-4-6"; omit or leave empty to use the default>
 description:<string, optional>
 icon:       <string, optional, emoji or URL>
 ```
+
+### Chat
+
+Both management and tsnet API endpoints (user-facing, not admin-only):
+- POST /api/v1/chat/messages    — send a user message; invokes claude synchronously; returns both the user and assistant ChatMessage. Request body: { "message": string }. Response (200): { "userMessage": ChatMessage, "assistantMessage": ChatMessage }. Returns 400 INVALID_MESSAGE if message is empty; 503 EXECUTOR_UNAVAILABLE if the claude binary is not found; 504 CHAT_TIMEOUT if claude does not respond within OASIS_CHAT_TIMEOUT.
+- GET  /api/v1/chat/messages    — return the full chat history ordered by creation time; { "items": [...], "total": N }
 
 ### Settings (management API only)
 - GET   /api/v1/settings        — get current settings (authKey omitted)
 - PATCH /api/v1/settings        — update settings
 
 ### Setup (management API only, one-time)
-- POST /api/v1/setup            — provide initial Tailscale auth key and hostname; triggers tsnet join
+- POST /api/v1/setup            — provide initial Tailscale auth key and hostname; triggers tsnet join. Optional field: `claude_oauth_token` (string) — Claude OAuth token stored in memory only (never persisted, never logged, lost on container restart). Passing this field injects CLAUDE_CODE_OAUTH_TOKEN into every claude subprocess invoked by the controller.

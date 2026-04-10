@@ -25,13 +25,13 @@ Top level command groups:
 - oasis app disable <slug>               — disable an app (hides it from the dashboard and removes its NGINX route, but keeps the record)
 - oasis app update <slug> [--name] [--url] [--description] [--icon] [--tags] [--access-type direct|proxy] — update app fields
 - oasis agent new <name>                  — write an agent YAML template to ./oasis-agent-<name>.yaml; edit the file then use `oasis agent add -f` to register
-- oasis agent add [--name <n>] [--slug <s>] [--prompt <p>] [--trigger tap|schedule|webhook] [--schedule <cron>] [--output-fmt markdown|html|plaintext] [--description <d>] [--icon <emoji|url>] [-f/--file <path>]
+- oasis agent add [--name <n>] [--slug <s>] [--prompt <p>] [--trigger tap|schedule|webhook] [--schedule <cron>] [--output-fmt markdown|html|plaintext] [--model <model-id>] [--description <d>] [--icon <emoji|url>] [-f/--file <path>]
 - oasis agent list [--json]               — list all registered agents with name, slug, trigger, enabled state
 - oasis agent show <slug> [--json]        — show full details for a single agent, including last run status
 - oasis agent remove <slug>               — remove agent and all its run history
 - oasis agent enable <slug>               — enable a disabled agent (scheduler resumes firing it; webhook accepts requests)
 - oasis agent disable <slug>              — disable an agent (scheduler skips it; webhook returns 409)
-- oasis agent update <slug> [--name] [--prompt] [--trigger] [--schedule] [--output-fmt] [--description] [--icon] — update agent fields
+- oasis agent update <slug> [--name] [--prompt] [--trigger] [--schedule] [--output-fmt] [--model] [--description] [--icon] — update agent fields
 - oasis settings get [key]               — print current settings (or a single key's value)
 - oasis settings set <key> <value>       — update a settings value
 - oasis db backup [--output <path>] [--db-path <container-path>] — download a copy of the SQLite database to the host; --db-path overrides the default /data/db/oasis.db for non-standard installs
