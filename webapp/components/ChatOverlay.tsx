@@ -85,12 +85,14 @@ export default function ChatOverlay({ onClose }: ChatOverlayProps) {
   return (
     <div
       data-testid="chat-overlay"
-      className="fixed inset-0 z-50 flex flex-col bg-slate-900"
+      className="fixed inset-0 z-50 flex flex-col notch-safe-top"
       style={{
         transform: prefersReducedMotion ? 'none' : visible ? 'translateY(0)' : 'translateY(100%)',
         transition: prefersReducedMotion ? 'none' : 'transform 0.3s ease',
       }}
     >
+      {/* bg-slate-900 starts below the notch so the wallpaper shows through the safe-area strip */}
+      <div className="flex flex-col flex-1 bg-slate-900 overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
         <span className="text-white font-medium">Chat</span>
@@ -157,6 +159,7 @@ export default function ChatOverlay({ onClose }: ChatOverlayProps) {
         >
           {sending ? '…' : 'Send'}
         </button>
+      </div>
       </div>
     </div>
   )

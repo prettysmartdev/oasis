@@ -210,16 +210,23 @@ func runInit(cmd *cobra.Command, advanced bool, dev bool) error {
 	if !hasClaudeJSON || !hasClaudeDir {
 		fmt.Fprintln(cmd.OutOrStdout(), "\nClaude authentication is required for AI features.")
 		if promptYesNo("Set up Claude now by logging in inside the container?", true) {
-			dockerExecCmd := exec.Command("docker", "exec", "-it", containerName, "claude")
+			fmt.Fprintln(cmd.OutOrStdout(), `
+Note: oasis runs Claude agents with --dangerously-skip-permissions.
+This lets agents read, write, and execute files in their work directories
+without pausing to ask for approval on every action. Agents run inside the
+container, isolated from your host machine. You will need to accept this
+mode when Claude prompts you below.
+`)
+			dockerExecCmd := exec.Command("docker", "exec", "-it", "-u", "oasis", containerName, "claude", "--dangerously-skip-permissions")
 			dockerExecCmd.Stdin = os.Stdin
 			dockerExecCmd.Stdout = os.Stdout
 			dockerExecCmd.Stderr = os.Stderr
 			if err := dockerExecCmd.Run(); err != nil {
 				fmt.Fprintln(os.Stderr, "Warning: Claude login exited with an error. You can retry later with:")
-				fmt.Fprintf(os.Stderr, "  docker exec -it %s claude\n", containerName)
+				fmt.Fprintf(os.Stderr, "  docker exec -it -u oasis %s claude --dangerously-skip-permissions\n", containerName)
 			}
 		} else {
-			fmt.Fprintf(os.Stderr, "You can set up Claude later with:\n  docker exec -it %s claude\n", containerName)
+			fmt.Fprintf(os.Stderr, "You can set up Claude later with:\n  docker exec -it -u oasis %s claude --dangerously-skip-permissions\n", containerName)
 		}
 	}
 

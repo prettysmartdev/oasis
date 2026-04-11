@@ -54,7 +54,10 @@ export default function HomePage() {
       {loading ? (
         <div className="flex flex-col h-screen overflow-hidden" aria-busy="true" aria-label="Loading apps">
           {/* Skeleton header */}
-          <header className="flex items-end gap-8 px-6 pt-12 pb-4 shrink-0">
+          <header
+            className="flex items-end gap-8 px-6 pb-6 shrink-0"
+            style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 4rem)' }}
+          >
             <div className="h-5 w-20 rounded bg-slate-700 animate-pulse" />
             <div className="h-4 w-14 rounded bg-slate-700/50 animate-pulse" />
           </header>

@@ -72,9 +72,12 @@ func (h *AgentHarness) Execute(ctx context.Context, a db.Agent, workDir string) 
 	}
 
 	// Build args.
+	// --dangerously-skip-permissions is used so that agent runs complete without
+	// prompting the user to approve each tool call. Runs execute inside the
+	// container in an isolated work directory.
 	args := []string{
 		"--print",
-		"--permission-mode", "auto",
+		"--dangerously-skip-permissions",
 		"--system-prompt", sysBuf.String(),
 	}
 	if a.Model != "" {

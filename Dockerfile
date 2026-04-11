@@ -112,6 +112,4 @@ RUN chown -R oasis:oasis /etc/nginx /var/lib/nginx /var/log/nginx
 # The management API is published loopback-only: 127.0.0.1:04515:04515
 EXPOSE 04515
 
-USER 1000
-
 ENTRYPOINT ["/init"]

@@ -87,7 +87,7 @@ export default function BottomNav({ appOpen, onCloseApp, onChatOpen }: BottomNav
     <>
       <nav
         aria-label="Bottom navigation"
-        className="fixed bottom-0 inset-x-0 z-40 flex items-end justify-between px-6 pb-8 pointer-events-none bottom-nav-safe"
+        className="fixed bottom-0 inset-x-0 z-40 flex items-end justify-between px-6 pb-10 pointer-events-none bottom-nav-safe"
       >
         {/* Logo / chat button */}
         <div className="pointer-events-auto flex items-end gap-3">

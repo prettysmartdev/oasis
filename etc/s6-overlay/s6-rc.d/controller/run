@@ -1,2 +1,2 @@
 #!/bin/sh
-exec /usr/local/bin/controller
+exec s6-setuidgid oasis /usr/local/bin/controller

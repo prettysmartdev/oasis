@@ -21,15 +21,17 @@ export function AppProxyView({ app }: AppProxyViewProps) {
 
   return (
     <motion.div
-      className="fixed inset-0 z-30 bg-black"
+      className="fixed inset-0 z-30 flex flex-col notch-safe-top"
       initial={prefersReducedMotion ? undefined : { opacity: 0 }}
       animate={prefersReducedMotion ? undefined : { opacity: 1 }}
       transition={{ duration: 0.2 }}
     >
+      {/* The safe-area strip above the iframe is transparent so the wallpaper
+          gradient shows through behind the notch/Dynamic Island */}
       <iframe
         src={`/apps/${app.slug}/`}
         title={app.displayName}
-        className="w-full h-full border-none"
+        className="flex-1 w-full border-none min-h-0"
         allow="fullscreen"
       />
     </motion.div>

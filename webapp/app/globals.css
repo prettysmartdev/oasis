@@ -52,6 +52,11 @@
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Safe-area inset for top content — keeps content below the notch/Dynamic Island on iOS PWA */
+.notch-safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
 /* Offline page wifi-off icon pulse animation */
 @keyframes offlinePulse {
   0%, 100% { opacity: 1; }

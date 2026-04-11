@@ -312,12 +312,14 @@ export function AgentWindow({ agent, onClose }: AgentWindowProps) {
         style={{ opacity: isVisible ? 1 : 0 }}
       />
 
-      {/* Modal panel */}
+      {/* Modal panel — paddingTop uses max() so it's at least 1rem but expands to
+          clear the notch/Dynamic Island on iOS PWA */}
       <div
         role="dialog"
         aria-modal="true"
         aria-label={`Agent: ${agent.name}`}
-        className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
+        className="fixed inset-0 z-50 flex items-center justify-center px-4 pb-4 pointer-events-none"
+        style={{ paddingTop: 'max(1rem, env(safe-area-inset-top, 1rem))' }}
       >
         <div
           className="pointer-events-auto w-full h-full flex flex-col rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl transition-all duration-200 motion-reduce:transition-none overflow-hidden"

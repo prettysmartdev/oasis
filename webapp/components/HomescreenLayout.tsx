@@ -65,8 +65,11 @@ export default function HomescreenLayout({ agents, apps, onOpenProxyApp }: Homes
 
   return (
     <div className="flex flex-col h-screen overflow-hidden">
-      {/* Page title bar */}
-      <header className="flex items-end gap-8 px-6 pt-12 pb-4 shrink-0">
+      {/* Page title bar — paddingTop combines the notch safe area with extra breathing room */}
+      <header
+        className="flex items-end gap-8 px-6 pb-6 shrink-0"
+        style={{ paddingTop: 'calc(env(safe-area-inset-top, 0px) + 4rem)' }}
+      >
         <button
           onClick={() => scrollToPage(0)}
           className="focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded"

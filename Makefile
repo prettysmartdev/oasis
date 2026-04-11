@@ -6,8 +6,8 @@ LDFLAGS           := -ldflags "-X main.version=$(VERSION)"
 
 GOLANGCI_LINT_VERSION := v1.57.2
 
-.PHONY: install-tools build build-webapp build-cli build-docker generate-icons run test lint \
-        test-integration _build-controller _build-cli
+.PHONY: install-tools build webapp cli docker generate-icons run test lint \
+        test-integration controller
 
 ## install-tools: Install golangci-lint into the local Go bin path.
 install-tools:
@@ -17,10 +17,10 @@ install-tools:
 	@echo "==> Done. Ensure $$GOPATH/bin is on your PATH."
 
 ## build: Build all components (webapp + Go binaries).
-build: build-webapp _build-controller _build-cli
+build: webapp controller cli
 
-## build-webapp: Build the Next.js static export.
-build-webapp:
+## webapp: Build the Next.js static export.
+webapp:
 	npm --prefix webapp ci
 	npm --prefix webapp run build
 
@@ -45,26 +45,25 @@ generate-icons:
 	})().catch(e=>{console.error(e);process.exit(1);});\
 	"
 
-## build-docker: Build the Docker image.
-build-docker: generate-icons
+## docker: Build the Docker image.
+docker: generate-icons
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE_TAG) .
 
-## run: Run the latest built image.
-run:
+## up: Run the latest built image.
+up:
 	docker run --rm \
 	    -p 127.0.0.1:04515:04515 \
 	    -v oasis-db:/data/db \
 	    -v oasis-ts-state:/data/ts-state \
 	    $(IMAGE_TAG)
 
-## build-cli: Build the CLI binary only → ./bin/oasis.
-build-cli: _build-cli
 
-_build-controller: $(shell find cmd/controller internal -name '*.go')
+controller: $(shell find cmd/controller internal -name '*.go')
 	@mkdir -p bin
 	CGO_ENABLED=0 go build -mod=mod $(LDFLAGS) -o $(BINARY_CONTROLLER) ./cmd/controller
 
-_build-cli: $(shell find cmd/oasis internal -name '*.go')
+
+cli: $(shell find cmd/oasis internal -name '*.go')
 	@mkdir -p bin
 	CGO_ENABLED=0 go build -mod=mod $(LDFLAGS) -o $(BINARY_CLI) ./cmd/oasis
 

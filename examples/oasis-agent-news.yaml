@@ -1,0 +1,9 @@
+# OaSis agent definition — fill in the fields and run: oasis agent add -f ./oasis-agent.yaml
+name: "newsbot"
+slug: "newsbot"
+description: "Gets the top stories"
+icon: "🗞️"
+prompt: "Fetch the front pages of CNN, NYTimes, CBC, BBC, and The Verge. Find the 3 top stories from each, get a summary of each (and combine if they are the same story across multiple sites). Format them as a newspaper-style page."
+trigger: "schedule"
+schedule: "0 */3 * * *"
+outputFmt: "html"
