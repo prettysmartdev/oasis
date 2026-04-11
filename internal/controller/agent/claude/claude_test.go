@@ -85,7 +85,7 @@ func TestExecuteAlwaysHasPrintFlag(t *testing.T) {
 	}
 }
 
-// TestExecuteAlwaysHasPermissionModeFlag verifies --permission-mode acceptEdits is always passed.
+// TestExecuteAlwaysHasPermissionModeFlag verifies --permission-mode auto is always passed.
 func TestExecuteAlwaysHasPermissionModeFlag(t *testing.T) {
 	fakeBin := writeFakeClaude(t, false)
 	workDir := t.TempDir()
@@ -98,8 +98,8 @@ func TestExecuteAlwaysHasPermissionModeFlag(t *testing.T) {
 	if !containsLine(content, "--permission-mode") {
 		t.Errorf("expected --permission-mode in args.txt:\n%s", content)
 	}
-	if !containsLine(content, "acceptEdits") {
-		t.Errorf("expected acceptEdits in args.txt:\n%s", content)
+	if !containsLine(content, "auto") {
+		t.Errorf("expected auto in args.txt:\n%s", content)
 	}
 }
 

@@ -4,7 +4,9 @@ package claude
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,14 +18,16 @@ import (
 )
 
 // systemPromptTmpl is rendered per-run and passed to claude via --system-prompt.
-var systemPromptTmpl = template.Must(template.New("sysprompt").Parse(`You are an AI assistant integrated into the Oasis homescreen. Your task is:
+var systemPromptTmpl = template.Must(template.New("sysprompt").Parse(`You are an assistant that completes a task and then creates a file with the results of that task.
 
-{{.Prompt}}
+File output format: {{.OutputFmt}}
 
-Output format: {{.OutputFmt}}
+Write the complete result of the task to: {{.OutputFile}}
 
-Write your complete response to the file: {{.OutputFile}}
-Do not output anything else. The file you write must be valid {{.OutputFmt}}. The file must exist when you finish.`))
+Do not create anything else.
+You should talk through your thought process and discuss the steps you take, but only output the final task result into the file.
+The file you write must be valid {{.OutputFmt}}.
+The file must exist when you finish.`))
 
 type systemPromptData struct {
 	Prompt     string
@@ -35,13 +39,11 @@ type systemPromptData struct {
 // The zero value is not usable; use New to construct.
 type AgentHarness struct {
 	binaryPath string
-	extraEnv   []string
 }
 
 // New returns a ClaudeAgentHarness that invokes the claude binary at the given path.
 // Pass an empty binaryPath to resolve "claude" via PATH at call time.
-// extraEnv entries (e.g. "CLAUDE_CODE_OAUTH_TOKEN=...") are injected into every subprocess.
-func New(binaryPath string, extraEnv []string) *AgentHarness {
+func New(binaryPath string) *AgentHarness {
 	if binaryPath == "" {
 		// Honour the override env var; fall back to resolving "claude" at exec time.
 		if v := os.Getenv("OASIS_CLAUDE_BIN"); v != "" {
@@ -50,7 +52,6 @@ func New(binaryPath string, extraEnv []string) *AgentHarness {
 	}
 	return &AgentHarness{
 		binaryPath: binaryPath,
-		extraEnv:   extraEnv,
 	}
 }
 
@@ -73,7 +74,7 @@ func (h *AgentHarness) Execute(ctx context.Context, a db.Agent, workDir string) 
 	// Build args.
 	args := []string{
 		"--print",
-		"--permission-mode", "acceptEdits",
+		"--permission-mode", "auto",
 		"--system-prompt", sysBuf.String(),
 	}
 	if a.Model != "" {
@@ -93,17 +94,34 @@ func (h *AgentHarness) Execute(ctx context.Context, a db.Agent, workDir string) 
 
 	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Dir = workDir
-	cmd.Env = append(os.Environ(), h.extraEnv...)
+	cmd.Env = os.Environ()
 
 	var combined bytes.Buffer
 	cmd.Stdout = &combined
 	cmd.Stderr = &combined
 
-	if err := cmd.Run(); err != nil {
-		// Write combined output to error.txt so the caller can store it.
-		errTxt := filepath.Join(workDir, "error.txt")
-		_ = os.WriteFile(errTxt, combined.Bytes(), 0o644)
-		return fmt.Errorf("claude exited with error: %w", err)
+	cmdLine := strings.Join(append([]string{binary}, args...), " ")
+	slog.Info("agent harness: executing claude", "agent", a.Slug, "workDir", workDir, "cmd", cmdLine)
+
+	runErr := cmd.Run()
+
+	exitCode := 0
+	if runErr != nil {
+		var exitErr *exec.ExitError
+		if errors.As(runErr, &exitErr) {
+			exitCode = exitErr.ExitCode()
+		} else {
+			exitCode = -1
+		}
+	}
+	slog.Info("agent harness: claude finished", "agent", a.Slug, "exitCode", exitCode)
+
+	// Always write full stdout+stderr for post-run debugging.
+	agentOut := filepath.Join(workDir, "agentoutput.txt")
+	_ = os.WriteFile(agentOut, combined.Bytes(), 0o644)
+
+	if runErr != nil {
+		return fmt.Errorf("claude exited with error: %w", runErr)
 	}
 
 	return nil

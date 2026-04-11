@@ -129,22 +129,33 @@ func (s *Scheduler) tick(ctx context.Context, now time.Time, wg *sync.WaitGroup)
 		agent := a // capture loop var
 		harness := s.harness
 		store := s.store
+		slog.Info("agent run triggered", "agent", agent.Slug, "runId", runID, "trigger", "schedule")
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
 			output, status := ExecuteRun(ctx, harness, agent, workDir)
 			finishedAt := time.Now().UTC()
+			LogRunCompletion(agent.Slug, runID, workDir, status)
 			if updateErr := store.UpdateAgentRun(ctx, runID, status, output, finishedAt); updateErr != nil {
 				slog.Error("agent scheduler: failed to update run", "runId", runID, "err", updateErr)
-			}
-			if status == "error" {
-				slog.Error("agent scheduler: run failed", "agent", agent.Slug, "runId", runID)
 			}
 		}()
 	}
 }
 
-// ExecuteRun calls harness.Execute and reads the output file or error.txt.
+// LogRunCompletion logs the final status and work directory contents for a completed run.
+func LogRunCompletion(agentSlug, runID, workDir, status string) {
+	entries, err := os.ReadDir(workDir)
+	files := make([]string, 0, len(entries))
+	if err == nil {
+		for _, e := range entries {
+			files = append(files, e.Name())
+		}
+	}
+	slog.Info("agent run completed", "agent", agentSlug, "runId", runID, "status", status, "workDirFiles", files)
+}
+
+// ExecuteRun calls harness.Execute and reads the output file or agentoutput.txt.
 // Returns (output, status).
 func ExecuteRun(ctx context.Context, harness AgentHarness, a db.Agent, workDir string) (string, string) {
 	err := harness.Execute(ctx, a, workDir)
@@ -153,9 +164,9 @@ func ExecuteRun(ctx context.Context, harness AgentHarness, a db.Agent, workDir s
 		if ctx.Err() != nil {
 			return "agent run timed out", "error"
 		}
-		// Try to read error.txt written by ClaudeHarness.
-		errTxt := filepath.Join(workDir, "error.txt")
-		if data, readErr := os.ReadFile(errTxt); readErr == nil && len(data) > 0 {
+		// Try to read agentoutput.txt written by ClaudeHarness.
+		agentOut := filepath.Join(workDir, "agentoutput.txt")
+		if data, readErr := os.ReadFile(agentOut); readErr == nil && len(data) > 0 {
 			return string(data), "error"
 		}
 		return fmt.Sprintf("agent execution failed: %v", err), "error"

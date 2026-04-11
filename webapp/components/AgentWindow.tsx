@@ -266,12 +266,32 @@ export function AgentWindow({ agent, onClose }: AgentWindowProps) {
     return () => document.removeEventListener('keydown', handleKey)
   }, [onClose])
 
-  const handleCheckAgain = useCallback(() => {
+  const handleCheckAgain = useCallback(async () => {
     setCheckAgainDisabled(true)
     setTimedOut(false)
-    startTapRun()
     setTimeout(() => setCheckAgainDisabled(false), CHECK_AGAIN_COOLDOWN_MS)
-  }, [startTapRun])
+
+    // If we have an existing run ID, re-fetch its status and resume polling
+    // rather than triggering a new run.
+    if (run?.id) {
+      setLoading(true)
+      try {
+        const updated = await fetchAgentRun(run.id)
+        setRun(updated)
+        if (updated.status === 'running') {
+          pollRun(run.id)
+        } else {
+          setLoading(false)
+        }
+      } catch {
+        setLoading(false)
+        startTapRun()
+      }
+      return
+    }
+
+    startTapRun()
+  }, [run, startTapRun, pollRun])
 
   const handleClose = useCallback(() => {
     setIsVisible(false)
@@ -300,7 +320,7 @@ export function AgentWindow({ agent, onClose }: AgentWindowProps) {
         className="fixed inset-0 z-50 flex items-center justify-center p-4 pointer-events-none"
       >
         <div
-          className="pointer-events-auto w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl transition-all duration-200 motion-reduce:transition-none overflow-hidden"
+          className="pointer-events-auto w-full h-full flex flex-col rounded-2xl bg-slate-900 border border-slate-700 shadow-2xl transition-all duration-200 motion-reduce:transition-none overflow-hidden"
           style={{
             opacity: isVisible ? 1 : 0,
             transform: isVisible ? 'translateY(0) scale(1)' : 'translateY(16px) scale(0.97)',

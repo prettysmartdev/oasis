@@ -144,8 +144,7 @@ func main() {
 	// starts the webapp API server without requiring a container restart.
 	mgmtHandler.SetOnSetup(startTsnetServer)
 
-	// Create the Claude harness. The token is populated later via /api/v1/setup.
-	claudeHarness := claudepkg.New(claudeBin, nil)
+	claudeHarness := claudepkg.New(claudeBin)
 
 	// Parse chat timeout.
 	chatTimeout, err := time.ParseDuration(chatTimeoutStr)

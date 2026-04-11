@@ -46,13 +46,9 @@ type Handler struct {
 	readOnly bool
 	version  string
 	onSetup  func(net.Listener) // called with the tsnet listener after first-run setup
-	harness  agentpkg.AgentHarness
-	runsDir  string
-	// claudeOAuthToken is set via POST /api/v1/setup and injected into claude subprocesses.
-	// It is never persisted to SQLite, never logged, and never returned in API responses.
-	// If the controller restarts the token is lost; the user must re-run oasis init.
-	claudeOAuthToken string
-	chatTimeout      time.Duration
+	harness     agentpkg.AgentHarness
+	runsDir     string
+	chatTimeout time.Duration
 }
 
 // New creates a new Handler. Pass nil for dependencies not yet available (e.g. in tests).
@@ -90,15 +86,6 @@ func (h *Handler) SetRunsDir(dir string) {
 // SetChatTimeout sets the timeout for synchronous chat invocations.
 func (h *Handler) SetChatTimeout(d time.Duration) {
 	h.chatTimeout = d
-}
-
-// claudeEnv returns the extra env vars to inject into claude subprocesses.
-// Returns nil if no token has been configured.
-func (h *Handler) claudeEnv() []string {
-	if h.claudeOAuthToken == "" {
-		return nil
-	}
-	return []string{"CLAUDE_CODE_OAUTH_TOKEN=" + h.claudeOAuthToken}
 }
 
 // activeHarness returns the configured harness or the default StubHarness.
@@ -576,7 +563,6 @@ func (h *Handler) handleUpdateSettings(w http.ResponseWriter, r *http.Request) {
 type setupRequest struct {
 	TailscaleAuthKey string `json:"tailscaleAuthKey"`
 	Hostname         string `json:"hostname"`
-	ClaudeOAuthToken string `json:"claude_oauth_token"` // optional; never logged
 }
 
 func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
@@ -598,11 +584,6 @@ func (h *Handler) handleSetup(w http.ResponseWriter, r *http.Request) {
 	// Set TS_AUTHKEY without logging it.
 	if req.TailscaleAuthKey != "" {
 		os.Setenv("TS_AUTHKEY", req.TailscaleAuthKey) //nolint:errcheck
-	}
-
-	// Store Claude OAuth token in memory — never persisted, never logged.
-	if req.ClaudeOAuthToken != "" {
-		h.claudeOAuthToken = req.ClaudeOAuthToken
 	}
 
 	// Update hostname in settings if provided.
@@ -1078,12 +1059,15 @@ func (h *Handler) triggerRun(w http.ResponseWriter, r *http.Request, triggerSrc 
 		return
 	}
 
+	slog.Info("agent run triggered", "agent", a.Slug, "runId", runID, "trigger", triggerSrc)
+
 	agent := *a
 	store := h.store
 	harness := h.activeHarness()
 	go func() {
 		output, status := agentpkg.ExecuteRun(context.Background(), harness, agent, workDir)
 		finishedAt := time.Now().UTC()
+		agentpkg.LogRunCompletion(agent.Slug, runID, workDir, status)
 		if updateErr := store.UpdateAgentRun(context.Background(), runID, status, output, finishedAt); updateErr != nil {
 			slog.Error("failed to update agent run", "runId", runID, "err", updateErr)
 		}
@@ -1209,6 +1193,8 @@ func (h *Handler) handleCreateChatMessage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	slog.Info("chat message received", "msgId", userMsg.ID)
+
 	// Run claude --print <message> synchronously.
 	timeout := h.chatTimeout
 	if timeout == 0 {
@@ -1221,10 +1207,11 @@ func (h *Handler) handleCreateChatMessage(w http.ResponseWriter, r *http.Request
 	if err != nil {
 		// If the executor is unavailable, return 503.
 		if errors.Is(err, exec.ErrNotFound) {
+			slog.Error("chat executor unavailable", "msgId", userMsg.ID)
 			writeError(w, http.StatusServiceUnavailable, "claude executor not available; install @anthropic-ai/claude-code", "EXECUTOR_UNAVAILABLE")
 			return
 		}
-		slog.Error("chat invocation failed", "err", err)
+		slog.Error("chat invocation failed", "msgId", userMsg.ID, "err", err)
 		assistantContent = fmt.Sprintf("Error: %v", err)
 	}
 
@@ -1240,6 +1227,7 @@ func (h *Handler) handleCreateChatMessage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	slog.Info("chat response sent", "userMsgId", userMsg.ID, "assistantMsgId", assistantMsg.ID)
 	writeJSON(w, http.StatusOK, createChatMessageResponse{
 		UserMessage:      toChatMessageJSON(userMsg),
 		AssistantMessage: toChatMessageJSON(assistantMsg),
@@ -1258,7 +1246,7 @@ func (h *Handler) runChat(ctx context.Context, message string) (string, error) {
 	}
 
 	cmd := exec.CommandContext(ctx, claudeBin, "--print", message)
-	cmd.Env = append(os.Environ(), h.claudeEnv()...)
+	cmd.Env = os.Environ()
 
 	var out bytes.Buffer
 	cmd.Stdout = &out

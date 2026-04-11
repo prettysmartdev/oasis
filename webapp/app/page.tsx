@@ -6,6 +6,7 @@ import HomescreenLayout from '@/components/HomescreenLayout'
 import BottomNav from '@/components/BottomNav'
 import TimeOfDayBackground from '@/components/TimeOfDayBackground'
 import { AppProxyView } from '@/components/AppProxyView'
+import ChatOverlay from '@/components/ChatOverlay'
 
 export default function HomePage() {
   const [agents, setAgents] = useState<Agent[]>([])
@@ -13,6 +14,7 @@ export default function HomePage() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [activeProxyApp, setActiveProxyApp] = useState<App | null>(null)
+  const [chatOpen, setChatOpen] = useState(false)
 
   useEffect(() => {
     // Fetch apps and agents in parallel; treat agents 404 as empty (API may not yet be deployed)
@@ -70,7 +72,8 @@ export default function HomePage() {
         <HomescreenLayout agents={agents} apps={apps} onOpenProxyApp={setActiveProxyApp} />
       )}
       {activeProxyApp && <AppProxyView app={activeProxyApp} />}
-      <BottomNav appOpen={activeProxyApp !== null} onCloseApp={() => setActiveProxyApp(null)} />
+      {chatOpen && <ChatOverlay onClose={() => setChatOpen(false)} />}
+      <BottomNav appOpen={activeProxyApp !== null} onCloseApp={() => setActiveProxyApp(null)} onChatOpen={() => setChatOpen(true)} />
     </>
   )
 }
